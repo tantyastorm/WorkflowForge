@@ -69,6 +69,8 @@ Current Phase 1 work is limited to repository structure, documentation, contribu
 
 - [Product definition](docs/product.md)
 - [V1 scope](docs/v1-scope.md)
+- [Architecture](docs/architecture.md)
+- [ADR 0001: Modular monolith](docs/adr/0001-modular-monolith.md)
 - [Glossary](docs/glossary.md)
 
 ## Contributing
