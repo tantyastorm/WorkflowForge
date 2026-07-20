@@ -13,7 +13,17 @@ def _compose_text() -> str:
 
 @pytest.mark.parametrize(
     "service",
-    ["postgres", "redis", "minio", "minio-init", "migrate", "api", "worker", "scheduler"],
+    [
+        "postgres",
+        "redis",
+        "minio",
+        "minio-init",
+        "migrate",
+        "api",
+        "worker",
+        "scheduler",
+        "web",
+    ],
 )
 def test_required_compose_services_exist(service: str) -> None:
     assert f"  {service}:" in _compose_text()
@@ -23,7 +33,9 @@ def test_compose_file_does_not_use_latest_images() -> None:
     assert ":latest" not in _compose_text()
 
 
-@pytest.mark.parametrize("volume", ["postgres_data", "redis_data", "minio_data"])
+@pytest.mark.parametrize(
+    "volume", ["postgres_data", "redis_data", "minio_data", "web_node_modules"]
+)
 def test_required_named_volumes_exist(volume: str) -> None:
     assert f"  {volume}:" in _compose_text()
 
@@ -56,3 +68,15 @@ def test_worker_and_scheduler_use_backend_image_with_separate_commands() -> None
     assert '"worker",' in compose
     assert '"beat",' in compose
     assert "/tmp/workflowforge-celerybeat-schedule" in compose
+
+
+def test_web_service_runs_vite_against_local_api() -> None:
+    compose = _compose_text()
+
+    assert "  web:" in compose
+    assert "node:24.11.1-bookworm-slim" in compose
+    assert "corepack pnpm install --frozen-lockfile" in compose
+    assert "corepack pnpm dev --host 0.0.0.0 --port 5173" in compose
+    assert "VITE_API_BASE_URL: ${VITE_API_BASE_URL:-http://localhost:8000}" in compose
+    assert "${WORKFLOWFORGE_WEB_HOST_PORT:-5173}:5173" in compose
+    assert "web_node_modules:/workspace/apps/web/node_modules" in compose
