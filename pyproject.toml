@@ -70,6 +70,7 @@ mypy_path = [
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+pythonpath = ["."]
 asyncio_mode = "auto"
 addopts = [
   "--strict-markers",

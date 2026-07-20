@@ -86,7 +86,8 @@ Current quality checks:
 ```powershell
 uv run ruff format --check .
 uv run ruff check .
-uv run mypy apps packages tests
+uv run mypy apps packages scripts tests
+uv run python scripts/validate_architecture.py
 uv run pytest
 uv run pytest --cov --cov-report=term-missing
 ```
