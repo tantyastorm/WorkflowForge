@@ -22,3 +22,16 @@ Current use cases:
 Registration is idempotent by content hash for the current non-tenant model. Re-registering identical content returns the existing document metadata. Infrastructure still enforces a database uniqueness constraint so concurrent duplicate inserts converge safely.
 
 The application layer does not write file bytes, call object storage, expose HTTP schemas, or depend on SQLAlchemy.
+
+## Authorization
+
+The authorization foundation defines immutable tenant context, transport-neutral authorization errors, permission checks, and pure membership-administration target policies.
+
+Current concepts:
+
+- `TenantContext`: trusted application context with user, organization, membership, role, and resolved permissions.
+- `AuthorizationPolicy`: side-effect-free permission checks over `TenantContext`.
+- `MembershipAdministrationPolicy`: owner/admin target restrictions for membership management.
+- `PermissionDenied`, `TenantBoundaryViolation`, and `MembershipAdministrationDenied`: transport-neutral errors for future API mapping.
+
+This package does not resolve tenant context from HTTP requests, query persistence, authenticate users, issue tokens, write audit records, or expose API schemas.

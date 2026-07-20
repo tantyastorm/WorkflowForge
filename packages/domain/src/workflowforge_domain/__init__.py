@@ -28,8 +28,10 @@ from workflowforge_domain.identity import (
     MembershipStatus,
     Organization,
     OrganizationSlug,
+    Permission,
     Role,
     User,
+    permissions_for_role,
 )
 
 __all__ = [
@@ -57,10 +59,12 @@ __all__ = [
     "MembershipStatus",
     "Organization",
     "OrganizationSlug",
+    "Permission",
     "Role",
     "StorageObjectKey",
     "User",
     "__version__",
+    "permissions_for_role",
 ]
 
 __version__ = "0.1.0a1"

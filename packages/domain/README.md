@@ -34,6 +34,8 @@ Current concepts:
 - `OrganizationSlug`: explicit lowercase public organization slug.
 - `Role`: `owner`, `admin`, `operator`, `reviewer`, and `auditor`.
 - `MembershipStatus`: `invited`, `active`, `suspended`, and `removed`.
+- `Permission`: stable named organization permissions for current identity and security behavior.
+- `permissions_for_role`: immutable code-defined role-to-permission resolution.
 - `User`: identity entity with email, display name, active state, and lifecycle timestamps.
 - `Organization`: tenant entity with name, immutable slug, active state, and lifecycle timestamps.
 - `Membership`: user-to-organization relationship with explicit invite, activation, suspension, reactivation, removal, and role-change transitions.

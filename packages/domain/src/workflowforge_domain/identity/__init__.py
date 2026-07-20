@@ -1,7 +1,7 @@
 """Public identity and tenancy domain API."""
 
 from workflowforge_domain.identity.entities import Membership, Organization, User
-from workflowforge_domain.identity.enums import MembershipStatus, Role
+from workflowforge_domain.identity.enums import MembershipStatus, Permission, Role
 from workflowforge_domain.identity.errors import (
     IdentityDomainError,
     InvalidDisplayName,
@@ -14,6 +14,7 @@ from workflowforge_domain.identity.errors import (
     LastActiveOwnerViolation,
     MembershipAlreadyRemoved,
 )
+from workflowforge_domain.identity.permissions import permissions_for_role
 from workflowforge_domain.identity.policies import (
     MembershipMutation,
     MembershipPolicy,
@@ -41,6 +42,8 @@ __all__ = [
     "MembershipStatus",
     "Organization",
     "OrganizationSlug",
+    "Permission",
     "Role",
     "User",
+    "permissions_for_role",
 ]

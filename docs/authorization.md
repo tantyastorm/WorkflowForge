@@ -51,7 +51,7 @@ The initial code-defined mapping should be conservative:
 | --- | --- |
 | `owner` | All organization permissions |
 | `admin` | `organization.read`, `organization.update`, `membership.read`, `membership.invite`, `membership.update`, `membership.remove`, `audit.read`, `api_keys.manage`, `provider_credentials.manage` |
-| `operator` | `organization.read`, `membership.read` plus future operational permissions |
+| `operator` | `organization.read`; future operational permissions are deferred |
 | `reviewer` | `organization.read` plus future review permissions |
 | `auditor` | `organization.read`, `membership.read`, `audit.read` plus future read-only operational permissions |
 

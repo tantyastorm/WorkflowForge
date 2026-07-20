@@ -1,20 +1,20 @@
-"""WorkflowForge application-layer package."""
+"""Public authorization application API."""
 
-from workflowforge_application.authorization import (
+from workflowforge_application.authorization.context import TenantContext
+from workflowforge_application.authorization.errors import (
     AuthorizationError,
-    AuthorizationPolicy,
     MembershipAdministrationDenied,
-    MembershipAdministrationMutation,
-    MembershipAdministrationPolicy,
     PermissionDenied,
     TenantBoundaryViolation,
-    TenantContext,
+)
+from workflowforge_application.authorization.policy import (
+    AuthorizationPolicy,
+    MembershipAdministrationMutation,
+    MembershipAdministrationPolicy,
     ensure_self_role_change_allowed,
 )
-from workflowforge_application.errors import ApplicationError
 
 __all__ = [
-    "ApplicationError",
     "AuthorizationError",
     "AuthorizationPolicy",
     "MembershipAdministrationDenied",
@@ -23,8 +23,5 @@ __all__ = [
     "PermissionDenied",
     "TenantBoundaryViolation",
     "TenantContext",
-    "__version__",
     "ensure_self_role_change_allowed",
 ]
-
-__version__ = "0.1.0a1"
