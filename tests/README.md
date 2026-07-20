@@ -15,7 +15,7 @@ uv run pytest
 uv run pytest --cov --cov-report=term-missing
 ```
 
-Database integration tests require real PostgreSQL settings:
+Database integration tests require real PostgreSQL settings and cover Alembic migrations plus document repository behavior:
 
 ```powershell
 uv run pytest -m "not integration"

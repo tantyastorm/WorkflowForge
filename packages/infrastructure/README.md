@@ -48,3 +48,18 @@ Registered Phase 1 tasks:
 - `system.diagnostics.scheduler_heartbeat`
 
 No business tasks are registered in this foundation.
+
+## Document Persistence
+
+Infrastructure implements the application document repository port with SQLAlchemy. The `documents` table stores metadata only:
+
+- document ID;
+- normalized original filename;
+- media type;
+- byte size;
+- SHA-256 content hash;
+- deterministic storage object key;
+- lifecycle status;
+- creation and update timestamps.
+
+The table enforces non-negative byte size, valid initial lifecycle statuses, unique content hashes, and unique storage object keys. The repository maps rows to domain objects and translates duplicate inserts into sanitized application errors. It does not expose ORM models outside infrastructure and does not write file bytes to MinIO.

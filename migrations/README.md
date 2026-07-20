@@ -22,7 +22,7 @@ uv run alembic current
 uv run alembic downgrade base
 ```
 
-API startup must not run migrations automatically. A later local infrastructure commit may add a dedicated migration service that runs `alembic upgrade head`.
+API startup must not run migrations automatically. Docker Compose includes a dedicated migration service that runs `alembic upgrade head`.
 
 Production favors forward migrations. Downgrades are supported where practical for development and validation.
 
@@ -50,4 +50,4 @@ uv run alembic downgrade base
 uv run alembic upgrade head
 ```
 
-The baseline migration intentionally creates no business tables; only Alembic metadata should exist after upgrade.
+The Phase 1 baseline migration intentionally created no business tables. Phase 2 adds `0002_create_documents`, which creates only the document metadata table. It does not add upload, extraction, workflow, user, tenant, or AI-provider tables.

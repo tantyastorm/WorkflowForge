@@ -147,3 +147,9 @@ Phase 1 implements only repository and development foundations:
 - One system-status frontend page.
 
 Phase 1 does not implement product workflows or business capabilities. It should not include document processing, workflow execution, AI provider integration, browser automation, human approval flows, reports, authentication beyond scheduled foundation work, or production business behavior.
+
+## Phase 2 Start
+
+Phase 2 begins product foundation work with document metadata persistence only. The initial document slice defines a domain entity, content hash, deterministic future storage key metadata, lifecycle status, application repository port, registration/retrieval service, SQLAlchemy repository adapter, and `documents` migration.
+
+This does not implement file uploads, object-storage writes, extraction, OCR, classification, workflow execution, AI processing, document API routes, or frontend document screens.

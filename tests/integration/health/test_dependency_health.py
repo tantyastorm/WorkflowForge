@@ -3,6 +3,7 @@
 import json
 import os
 import socket
+import time
 from http.client import HTTPConnection
 from urllib.parse import urlparse
 
@@ -89,24 +90,7 @@ def test_dependency_health_endpoint_succeeds_against_compose_api() -> None:
         api_base_url = f"http://127.0.0.1:{api_port}"
     api_host, api_port = _host_port_from_url(api_base_url)
     _require_tcp(api_host, api_port, "API")
-    connection = HTTPConnection(api_host, api_port, timeout=5)
-    try:
-        connection.request(
-            "GET",
-            "/health/dependencies",
-            headers={"X-Correlation-ID": "integration-health"},
-        )
-        response = connection.getresponse()
-        status = response.status
-        response_body = response.read().decode("utf-8")
-        correlation_id = response.headers.get("X-Correlation-ID")
-    except OSError as exc:
-        pytest.skip(f"API service is unavailable: {exc}")
-    finally:
-        connection.close()
-
-    if status != 200:
-        pytest.skip(f"API dependency health endpoint is unavailable: HTTP {status}")
+    status, response_body, correlation_id = _wait_for_dependency_health(api_host, api_port)
 
     body = json.loads(response_body)
 
@@ -120,6 +104,39 @@ def test_dependency_health_endpoint_succeeds_against_compose_api() -> None:
         "worker",
         "scheduler",
     ]
+
+
+def _wait_for_dependency_health(host: str, port: int) -> tuple[int, str, str | None]:
+    deadline = time.monotonic() + 45
+    last_status = 0
+    last_body = ""
+    last_correlation_id: str | None = None
+
+    while time.monotonic() < deadline:
+        connection = HTTPConnection(host, port, timeout=5)
+        try:
+            connection.request(
+                "GET",
+                "/health/dependencies",
+                headers={"X-Correlation-ID": "integration-health"},
+            )
+            response = connection.getresponse()
+            last_status = response.status
+            last_body = response.read().decode("utf-8")
+            last_correlation_id = response.headers.get("X-Correlation-ID")
+        except OSError as exc:
+            pytest.skip(f"API service is unavailable: {exc}")
+        finally:
+            connection.close()
+
+        if last_status == 200:
+            return last_status, last_body, last_correlation_id
+        time.sleep(2)
+
+    pytest.fail(
+        f"API dependency health endpoint did not become healthy before timeout: "
+        f"HTTP {last_status} {last_body}"
+    )
 
 
 def _require_url(url: str, name: str) -> None:

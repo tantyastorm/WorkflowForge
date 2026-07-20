@@ -24,7 +24,9 @@ ALLOWED_INTERNAL_IMPORTS_BY_PACKAGE: Mapping[str, frozenset[str]] = {
     "workflowforge_domain": frozenset(),
     "workflowforge_contracts": frozenset({"workflowforge_domain"}),
     "workflowforge_application": frozenset({"workflowforge_domain", "workflowforge_contracts"}),
-    "workflowforge_infrastructure": frozenset({"workflowforge_domain", "workflowforge_contracts"}),
+    "workflowforge_infrastructure": frozenset(
+        {"workflowforge_domain", "workflowforge_contracts", "workflowforge_application"}
+    ),
     "workflowforge_api": frozenset(
         {
             "workflowforge_domain",
