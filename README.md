@@ -4,9 +4,9 @@ WorkflowForge is an open-source operations platform for building, evaluating, an
 
 ## Project Status
 
-WorkflowForge has completed the Phase 1 alpha foundation and is now in early Phase 2 product foundation work. The repository layout, contribution standards, architecture boundaries, Python workspace, database migration foundation, local infrastructure, API health foundation, Celery worker/scheduler process foundations, React frontend foundation, frontend system-status view, CI validation, and document metadata persistence foundation are in place.
+WorkflowForge has completed the Phase 1 alpha foundation and is now in early Phase 2 product foundation work. The repository layout, contribution standards, architecture boundaries, Python workspace, database migration foundation, local infrastructure, API health foundation, Celery worker/scheduler process foundations, React frontend foundation, frontend system-status view, CI validation, and document metadata persistence foundation are in place. Identity, tenancy, authorization, security, and audit foundations are documented as planned Phase 2 architecture decisions.
 
-This stage does not implement file upload endpoints, authentication, workflow execution features, document extraction or classification, business worker tasks, scheduler workflow triggers, final dashboard UI, or object-storage writes.
+This stage does not implement file upload endpoints, authentication runtime behavior, tenant runtime behavior, workflow execution features, document extraction or classification, business worker tasks, scheduler workflow triggers, final dashboard UI, or object-storage writes.
 
 ## Planned Capabilities
 
@@ -64,15 +64,24 @@ scripts/               Developer and automation scripts.
 
 ## Current Scope
 
-Phase 2 has started with document metadata only: a framework-independent document domain model, application services for registration and retrieval, a SQLAlchemy repository adapter, and an Alembic `documents` table. File upload, object writes, extraction, classification, workflow execution, and document UI remain deferred.
+Phase 2 has started with document metadata and identity/tenancy architecture planning. The implemented slice is document metadata only: a framework-independent document domain model, application services for registration and retrieval, a SQLAlchemy repository adapter, and an Alembic `documents` table. File upload, object writes, authentication runtime behavior, tenant runtime behavior, authorization enforcement, audit persistence, extraction, classification, workflow execution, and document UI remain deferred.
 
 ## Documentation
 
 - [Product definition](docs/product.md)
 - [V1 scope](docs/v1-scope.md)
 - [Architecture](docs/architecture.md)
+- [Identity](docs/identity.md)
+- [Tenancy](docs/tenancy.md)
+- [Authorization](docs/authorization.md)
+- [Security](docs/security.md)
+- [Audit](docs/audit.md)
 - [Phase 1 alpha readiness](docs/phase-1-readiness.md)
 - [ADR 0001: Modular monolith](docs/adr/0001-modular-monolith.md)
+- [ADR 0002: Authentication and session model](docs/adr/0002-authentication-and-session-model.md)
+- [ADR 0003: Tenant isolation strategy](docs/adr/0003-tenant-isolation-strategy.md)
+- [ADR 0004: Role and permission model](docs/adr/0004-role-and-permission-model.md)
+- [ADR 0005: Audit event storage](docs/adr/0005-audit-event-storage.md)
 - [Glossary](docs/glossary.md)
 
 ## Backend Workspace

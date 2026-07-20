@@ -1,0 +1,103 @@
+# Identity
+
+This document records the planned WorkflowForge identity foundation for Phase 2. It is architectural documentation, not an implementation record.
+
+## Goals
+
+- Support the React operator console without storing long-lived bearer credentials in browser storage.
+- Keep room for future CLI clients, Telegram account linking, and API keys.
+- Allow server-side session revocation, logout, logout-all, and refresh-token reuse detection.
+- Keep authentication transport separate from tenancy, authorization, and audit behavior.
+- Preserve the existing modular-monolith package boundaries.
+
+## Authentication Model
+
+WorkflowForge will use a hybrid token model:
+
+- Short-lived JWT access tokens.
+- Access tokens transported through `Authorization: Bearer`.
+- Opaque rotating refresh tokens transported through an HttpOnly cookie for the React web application.
+- Durable server-side session records and refresh-token records.
+- Refresh-token reuse detection.
+- Token-family revocation.
+- Logout and logout-all.
+
+Access JWTs must use minimal claims:
+
+- `sub`
+- `sid`
+- `jti`
+- `iat`
+- `exp`
+- `iss`
+- `aud`
+
+Access JWTs must not contain organization IDs, roles, permission matrices, email addresses, secrets, refresh-token material, or provider credentials. The API resolves organization membership and permissions server-side for each tenant-scoped request.
+
+This model supports the React application by keeping the refresh credential in an HttpOnly cookie while the frontend keeps the access token in memory. It supports a future CLI because non-browser clients can use bearer access tokens and an appropriate refresh flow without depending on browser cookies. It supports future Telegram linking because sessions and linked identities can be represented server-side without embedding provider state in access tokens. It supports future API keys because API-key authentication can resolve to the same server-side user or actor context without changing tenant authorization. It supports local development because JWT validation, refresh rotation, and session revocation can run against the local PostgreSQL and Redis stack. It supports server-side revocation because sessions and refresh-token families are durable records.
+
+## Password Model
+
+WorkflowForge passwords will use:
+
+- Argon2id password hashing.
+- Minimum length of 12 characters.
+- Maximum length of 256 characters.
+- Support for passphrases and password managers.
+- No arbitrary composition rules such as mandatory symbols, numbers, or uppercase letters.
+- Future parameter rehashing when stored hash parameters become outdated.
+- No plaintext password logging.
+
+Validation errors should describe length constraints without echoing password material. Password hashes, hash parameters, and rehash decisions belong behind infrastructure cryptography adapters and application use cases, not HTTP routes.
+
+## Email Normalization
+
+Email addresses are normalized with:
+
+```python
+email.strip().casefold()
+```
+
+WorkflowForge will persist both the display or original email and the normalized email. Uniqueness is based on normalized email.
+
+Provider-specific transformations, including Gmail dot removal or plus-address rewriting, are intentionally not used. Those transformations are provider-specific, surprising across domains, and can merge addresses that the owning provider or organization treats as distinct.
+
+## Session And Refresh Tokens
+
+Refresh tokens are cryptographically random opaque values. The raw token is returned only to the client through the appropriate cookie flow and is never persisted.
+
+Persisted refresh-token records store:
+
+- SHA-256 digest of the token.
+- Session ID.
+- Token family ID.
+- Issued timestamp.
+- Expiry timestamp.
+- Used timestamp.
+- Revoked timestamp.
+- Replaced-by token reference.
+
+Refresh rotation must be atomic: consuming the current refresh token and issuing the replacement happen in one transaction. Reuse of an already-used, revoked, expired, or superseded refresh token is treated as suspicious and revokes the token family. Family revocation invalidates all refresh tokens in the family and prevents further rotation.
+
+## Registration And Bootstrap
+
+Registration is controlled by `WORKFLOWFORGE_AUTH_REGISTRATION_ENABLED`.
+
+Development registration may be enabled. Production registration defaults to disabled. Registration creates a user only; organization creation is a separate operation. The creator of an organization becomes its owner.
+
+WorkflowForge will not ship default admin credentials. A CLI bootstrap command for initial production setup is planned later in Phase 2.
+
+## HTTP Authentication Errors
+
+- `401` is used for missing or invalid authentication.
+- `403` is used for authenticated users who lack permission on a visible tenant resource.
+- `404` is used for cross-tenant resources whose existence must remain hidden.
+- `409` is used for invariant and uniqueness conflicts.
+- `422` is used for validation errors.
+- `429` is used for rate limiting.
+
+## Architecture Boundaries
+
+Identity domain rules belong in `packages/domain` where they are durable business concepts. Session use cases, password policy decisions, refresh-token rotation, and authentication ports belong in `packages/application` or `packages/contracts` as appropriate. Password hashing, token signing, token digesting, Redis rate limiting, and persistence adapters belong in `packages/infrastructure`. HTTP cookie handling, bearer-token parsing, response mapping, and dependency composition belong in `apps/api`. Frontend authentication state and login/logout UX belong in `apps/web`.
+
+WorkflowForge should not create a generic `AuthService` that owns identity, sessions, tenancy, authorization, and audit together.
