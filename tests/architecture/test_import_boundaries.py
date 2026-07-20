@@ -23,7 +23,8 @@ def test_allowed_internal_dependencies_pass(tmp_path: Path) -> None:
     write_package_file(
         tmp_path,
         "packages/infrastructure/src/workflowforge_infrastructure/adapter.py",
-        "import workflowforge_domain\nimport workflowforge_contracts.health\n",
+        "import workflowforge_domain\nimport workflowforge_contracts.health\n"
+        "from workflowforge_application.health.ports import DependencyHealthCheck\n",
     )
     write_package_file(
         tmp_path,

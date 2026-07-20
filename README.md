@@ -4,9 +4,9 @@ WorkflowForge is an open-source operations platform for building, evaluating, an
 
 ## Project Status
 
-WorkflowForge is at the Phase 1 alpha foundation milestone. The repository layout, contribution standards, architecture boundaries, Python workspace, database migration foundation, local infrastructure, API health foundation, Celery worker/scheduler process foundations, React frontend foundation, frontend system-status view, and CI validation are in place.
+WorkflowForge has completed the Phase 1 alpha foundation and is now in early Phase 2 product foundation work. The repository layout, contribution standards, architecture boundaries, Python workspace, database migration foundation, local infrastructure, API health foundation, Celery worker/scheduler process foundations, React frontend foundation, frontend system-status view, CI validation, and document metadata persistence foundation are in place.
 
-This stage does not implement authentication, workflow execution features, document processing, business worker tasks, scheduler workflow triggers, final dashboard UI, or business object-storage APIs.
+This stage does not implement file upload endpoints, authentication, workflow execution features, document extraction or classification, business worker tasks, scheduler workflow triggers, final dashboard UI, or object-storage writes.
 
 ## Planned Capabilities
 
@@ -39,11 +39,12 @@ packages/application
         +-- packages/contracts
 
 packages/infrastructure
+        +-- packages/application
         +-- packages/domain
         +-- packages/contracts
 ```
 
-The domain layer remains independent of frameworks and infrastructure. Application orchestration depends on domain and contracts, but not directly on infrastructure. Infrastructure implements ports and adapters defined by the inner layers. Apps are composition roots that wire processes together.
+The domain layer remains independent of frameworks and infrastructure. Application orchestration depends on domain and contracts, but not directly on infrastructure. Infrastructure implements ports and adapters defined by the application and contract layers. Apps are composition roots that wire processes together.
 
 ## Repository Map
 
@@ -61,9 +62,9 @@ infrastructure/        Deployment and operations assets.
 scripts/               Developer and automation scripts.
 ```
 
-## Phase 1 Scope
+## Current Scope
 
-Current Phase 1 work is limited to focused foundations. The API process exposes operational health endpoints only; product routes, authentication, document handling, workflow execution, and business UI are deferred to later phases.
+Phase 2 has started with document metadata only: a framework-independent document domain model, application services for registration and retrieval, a SQLAlchemy repository adapter, and an Alembic `documents` table. File upload, object writes, extraction, classification, workflow execution, and document UI remain deferred.
 
 ## Documentation
 

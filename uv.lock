@@ -1053,6 +1053,7 @@ dependencies = [
     { name = "redis" },
     { name = "sqlalchemy", extra = ["asyncio"] },
     { name = "structlog" },
+    { name = "workflowforge-application" },
     { name = "workflowforge-contracts" },
     { name = "workflowforge-domain" },
 ]
@@ -1068,6 +1069,7 @@ requires-dist = [
     { name = "redis", specifier = ">=8.0.1" },
     { name = "sqlalchemy", extras = ["asyncio"], specifier = ">=2.0.0" },
     { name = "structlog", specifier = ">=25.4.0" },
+    { name = "workflowforge-application", editable = "packages/application" },
     { name = "workflowforge-contracts", editable = "packages/contracts" },
     { name = "workflowforge-domain", editable = "packages/domain" },
 ]

@@ -10,6 +10,7 @@ dependencies = [
   "psycopg[binary]>=3.2.0",
   "sqlalchemy[asyncio]>=2.0.0",
   "structlog>=25.4.0",
+  "workflowforge-application",
   "workflowforge-contracts",
   "workflowforge-domain",
   "redis>=8.0.1",

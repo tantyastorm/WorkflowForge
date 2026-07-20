@@ -215,6 +215,7 @@ apps/scheduler ---/          |
 
 infrastructure -------------> domain
 infrastructure -------------> contracts
+infrastructure -------------> application
 
 domain -X-> application
 domain -X-> infrastructure
@@ -232,6 +233,7 @@ flowchart LR
   Application --> Contracts
   Infrastructure --> Domain
   Infrastructure --> Contracts
+  Infrastructure --> Application
   Web[apps/web] --> API[REST API]
 
   Domain -. forbidden .-> Application
@@ -318,6 +320,16 @@ This commit does not define the endpoint catalogue.
 The API creates durable intent in PostgreSQL before publishing asynchronous work. Celery transports work to workers. Workers invoke application use cases, and business state is persisted in PostgreSQL.
 
 Retries must be explicit and bounded. Tasks must be idempotent where retries are possible. Task publication failures must be observable. The scheduler publishes work but does not own durable workflow state. Dead-letter handling is planned for execution phases.
+
+## Document Metadata Foundation
+
+The first Phase 2 business table is `documents`. It stores durable metadata for a future uploaded object: stable document ID, user-facing original filename, media type, byte size, SHA-256 content hash, deterministic storage object key, lifecycle status, and timestamps.
+
+The document domain remains independent from SQLAlchemy, FastAPI, S3, Celery, and AI providers. Application services define the registration and retrieval use cases behind a repository port. Infrastructure implements that port with SQLAlchemy and maps database rows back to domain objects.
+
+The initial duplicate-content policy is idempotent by content hash in the current non-tenant model: registering identical content returns the existing document metadata. The database enforces unique `content_hash` and `storage_object_key` values so concurrent inserts cannot create duplicate rows. If tenants are introduced later, uniqueness can become tenant-scoped in a migration without changing the domain concept that a content hash identifies bytes.
+
+Storage keys are metadata only in this step. The format is `documents/sha256/<first-two-hex>/<next-two-hex>/<sha256>`, derived from the normalized SHA-256 content hash and independent from the original filename. This keeps keys deterministic, path-safe, and suitable for future MinIO writes without storing file bytes yet.
 
 ## Migration Strategy
 
