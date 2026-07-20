@@ -3,6 +3,7 @@ import { createBrowserRouter, type RouteObject } from "react-router";
 import { ErrorState } from "../components/feedback/ErrorState";
 import { AppShell } from "../components/layout/AppShell";
 import { HomePage } from "../features/home/HomePage";
+import { SystemStatusPage } from "../features/system-status/SystemStatusPage";
 
 export const appRoutes: RouteObject[] = [
   {
@@ -11,6 +12,10 @@ export const appRoutes: RouteObject[] = [
       {
         path: "/",
         element: <HomePage />,
+      },
+      {
+        path: "/status",
+        element: <SystemStatusPage />,
       },
       {
         path: "*",

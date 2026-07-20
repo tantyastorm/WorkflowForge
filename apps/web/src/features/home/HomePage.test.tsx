@@ -10,6 +10,10 @@ describe("HomePage", () => {
     expect(
       screen.getByText(/repository foundation is under active development/i),
     ).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "View platform system status" })).toHaveAttribute(
+      "href",
+      "/status",
+    );
   });
 
   it("renders the application shell once", () => {

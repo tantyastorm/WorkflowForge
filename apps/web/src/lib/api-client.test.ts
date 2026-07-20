@@ -83,6 +83,30 @@ describe("ApiClient", () => {
     );
   });
 
+  it("accepts explicitly expected non-2xx responses", async () => {
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(
+      jsonResponse(
+        { status: "unhealthy" },
+        {
+          status: 503,
+          statusText: "Service Unavailable",
+          headers: { "X-Correlation-ID": "response-id" },
+        },
+      ),
+    );
+    const client = new ApiClient({ baseUrl: "http://localhost:8000", fetchImpl: fetchMock });
+
+    const result = await client.request<{ status: string }>("/health/dependencies", {
+      expectedStatuses: [200, 503],
+    });
+
+    expect(result).toEqual({
+      data: { status: "unhealthy" },
+      status: 503,
+      correlationId: "response-id",
+    });
+  });
+
   it("distinguishes timeout failures", async () => {
     const fetchMock = vi.fn<typeof fetch>(
       (_input: RequestInfo | URL, init?: RequestInit) =>

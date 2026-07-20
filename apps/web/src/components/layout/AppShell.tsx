@@ -11,6 +11,9 @@ export function AppShell() {
           <NavLink to="/" className="app-shell__nav-link">
             Home
           </NavLink>
+          <NavLink to="/status" className="app-shell__nav-link">
+            Status
+          </NavLink>
         </nav>
       </header>
       <main className="app-shell__main">

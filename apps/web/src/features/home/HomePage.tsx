@@ -11,7 +11,9 @@ export function HomePage() {
           typed API access, and the system-status view coming next.
         </p>
         <div className="home-page__note" aria-label="Next foundation area">
-          System status integration will appear here in the next Phase 1 commit.
+          <a className="home-page__status-link" href="/status">
+            View platform system status
+          </a>
         </div>
       </div>
     </PageContainer>

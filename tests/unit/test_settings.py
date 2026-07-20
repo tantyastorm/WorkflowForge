@@ -33,7 +33,10 @@ def test_settings_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
     assert settings.api.port == 8000
     assert settings.api.v1_prefix == "/api/v1"
     assert settings.api.docs_enabled is True
-    assert settings.cors_origins == ("http://localhost:5173",)
+    assert settings.cors_origins == (
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+    )
     assert settings.redis.host == "localhost"
     assert settings.redis.port == 6379
     assert settings.redis.db == 0

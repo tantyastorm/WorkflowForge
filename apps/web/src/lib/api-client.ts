@@ -14,6 +14,7 @@ export type ApiRequestOptions = {
   body?: unknown;
   headers?: HeadersInit;
   correlationId?: string;
+  expectedStatuses?: readonly number[];
   signal?: AbortSignal;
   timeoutMs?: number;
 };
@@ -92,7 +93,7 @@ export class ApiClient {
       const correlationId = response.headers.get(CORRELATION_ID_HEADER);
       const data = await parseResponseBody(response);
 
-      if (!response.ok) {
+      if (!isExpectedStatus(response.status, options.expectedStatuses)) {
         throw new ApiError({
           status: response.status,
           code: "HTTP_ERROR",
@@ -141,6 +142,13 @@ export function joinUrl(baseUrl: string, path: string): string {
 
 function normalizeBaseUrl(value: string): string {
   return value.replace(/\/+$/, "");
+}
+
+function isExpectedStatus(status: number, expectedStatuses?: readonly number[]): boolean {
+  if (expectedStatuses !== undefined) {
+    return expectedStatuses.includes(status);
+  }
+  return status >= 200 && status < 300;
 }
 
 async function parseResponseBody(response: Response): Promise<unknown> {

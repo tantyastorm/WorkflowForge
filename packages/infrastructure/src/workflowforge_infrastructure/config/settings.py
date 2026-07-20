@@ -258,7 +258,10 @@ class Settings(BaseSettings):
     log_level: LogLevel = LogLevel.INFO
     log_format: LogFormat = LogFormat.CONSOLE
     api: ApiSettings = Field(default_factory=lambda: ApiSettings())
-    cors_origins: Annotated[tuple[str, ...], NoDecode] = ("http://localhost:5173",)
+    cors_origins: Annotated[tuple[str, ...], NoDecode] = (
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+    )
     database: DatabaseSettings = Field(default_factory=lambda: DatabaseSettings())
     redis: RedisSettings = Field(default_factory=lambda: RedisSettings())
     s3: S3Settings = Field(default_factory=lambda: S3Settings())

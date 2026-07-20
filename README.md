@@ -4,9 +4,9 @@ WorkflowForge is an open-source operations platform for building, evaluating, an
 
 ## Project Status
 
-WorkflowForge is in early Phase 1 foundation work. The repository layout, contribution standards, architecture boundaries, Python workspace, database migration foundation, local infrastructure, API health foundation, Celery worker/scheduler process foundations, and React frontend foundation are in place.
+WorkflowForge is in early Phase 1 foundation work. The repository layout, contribution standards, architecture boundaries, Python workspace, database migration foundation, local infrastructure, API health foundation, Celery worker/scheduler process foundations, React frontend foundation, and frontend system-status view are in place.
 
-This stage does not implement authentication, workflow execution features, business worker tasks, scheduler workflow triggers, frontend system-status integration, or business object-storage APIs.
+This stage does not implement authentication, workflow execution features, business worker tasks, scheduler workflow triggers, final dashboard UI, or business object-storage APIs.
 
 ## Planned Capabilities
 
@@ -182,7 +182,17 @@ corepack pnpm --dir apps/web test:run
 corepack pnpm --dir apps/web build
 ```
 
-The current frontend is a route-ready application shell only. Real system-status integration comes next.
+The `/status` route shows live platform health from `GET /health/live`, `GET /health/ready`, and `GET /health/dependencies`. It displays API liveness, API readiness, PostgreSQL, Redis, object storage, worker, and scheduler status. The page refreshes automatically every 20 seconds through TanStack Query and also supports manual refresh.
+
+Run the backend and frontend together:
+
+```powershell
+Copy-Item .env.example .env
+docker compose up --build -d
+corepack pnpm --dir apps/web dev --host 127.0.0.1
+```
+
+Open `http://127.0.0.1:5173/status` to inspect real local health. The frontend remains a Phase 1 operational view, not final product branding or a business dashboard.
 
 ## Contributing
 

@@ -30,6 +30,12 @@ Open:
 http://127.0.0.1:5173
 ```
 
+The first real feature route is:
+
+```text
+http://127.0.0.1:5173/status
+```
+
 Quality commands:
 
 ```powershell
@@ -52,6 +58,26 @@ VITE_API_BASE_URL=http://localhost:8000
 
 The value is parsed with Zod, must be an absolute HTTP or HTTPS URL, and is normalized without trailing slashes. Do not put backend secrets, database URLs, Redis URLs, object-storage credentials, or API keys in Vite environment variables.
 
+## System Status
+
+`/status` displays live platform health from the backend health endpoints:
+
+- `GET /health/live`
+- `GET /health/ready`
+- `GET /health/dependencies`
+
+The page shows API liveness, API readiness, PostgreSQL, Redis, object storage, worker, and scheduler status. Dependency health refreshes automatically every 20 seconds through TanStack Query and can also be refreshed manually with the page refresh button. A dependency `503` response is parsed as health data because the backend uses it to report degraded dependencies.
+
+Run the backend and frontend together from the repository root:
+
+```powershell
+Copy-Item .env.example .env
+docker compose up --build -d
+corepack pnpm --dir apps/web dev --host 127.0.0.1
+```
+
+Then open `http://127.0.0.1:5173/status`. Local frontend env overrides belong in untracked Vite env files.
+
 ## Current Scope
 
-The app currently provides a neutral route-ready shell, provider composition, typed environment parsing, an API-client foundation, loading/error components, and an error boundary. It does not include authentication, dashboards, workflow screens, document screens, charts, business UI, generated API clients, or the real system-status page. System-status integration is the next frontend commit.
+The app currently provides a neutral route-ready shell, provider composition, typed environment parsing, an API-client foundation, loading/error components, an error boundary, and the operational system-status page. It does not include authentication, dashboards, workflow screens, document screens, charts, business UI, generated API clients, or final UI branding.

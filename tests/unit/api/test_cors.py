@@ -16,6 +16,17 @@ def test_configured_origin_receives_cors_headers() -> None:
     assert response.headers["access-control-allow-origin"] == "http://localhost:5173"
 
 
+def test_loopback_frontend_origin_receives_cors_headers() -> None:
+    app = create_app(
+        Settings(environment=Environment.TEST, cors_origins=("http://127.0.0.1:5173",))
+    )
+
+    with TestClient(app) as client:
+        response = client.get("/health/live", headers={"Origin": "http://127.0.0.1:5173"})
+
+    assert response.headers["access-control-allow-origin"] == "http://127.0.0.1:5173"
+
+
 def test_unknown_origin_does_not_receive_cors_headers() -> None:
     app = create_app(
         Settings(environment=Environment.TEST, cors_origins=("http://localhost:5173",))
