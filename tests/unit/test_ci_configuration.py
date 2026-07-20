@@ -10,6 +10,11 @@ def _read(path: Path) -> str:
     return path.read_text(encoding="utf-8")
 
 
+def _backend_integration_job() -> str:
+    backend = _read(WORKFLOWS / "backend.yml")
+    return backend.split("  integration:", maxsplit=1)[1]
+
+
 def test_required_workflow_files_exist() -> None:
     assert (WORKFLOWS / "backend.yml").is_file()
     assert (WORKFLOWS / "frontend.yml").is_file()
@@ -68,6 +73,39 @@ def test_integration_workflow_keeps_host_ports_out_of_app_settings_namespace() -
     ]
     for setting in forbidden_settings:
         assert setting not in backend
+
+
+def test_integration_workflow_scopes_compose_app_settings_away_from_pytest_env() -> None:
+    integration_job = _backend_integration_job()
+
+    integration_env = integration_job.split("    env:", maxsplit=1)[1].split(
+        "    steps:", maxsplit=1
+    )[0]
+    for setting in [
+        "WORKFLOWFORGE_DATABASE_PASSWORD",
+        "WORKFLOWFORGE_S3_ACCESS_KEY",
+        "WORKFLOWFORGE_S3_SECRET_KEY",
+        "WORKFLOWFORGE_S3_BUCKET",
+        "WORKFLOWFORGE_SCHEDULER_HEARTBEAT_INTERVAL_SECONDS",
+        "WORKFLOWFORGE_SCHEDULER_HEARTBEAT_TTL_SECONDS",
+    ]:
+        assert setting not in integration_env
+
+    for setting in [
+        "WORKFLOWFORGE_TEST_DATABASE_PASSWORD",
+        "WORKFLOWFORGE_TEST_S3_ACCESS_KEY",
+        "WORKFLOWFORGE_TEST_S3_SECRET_KEY",
+        "WORKFLOWFORGE_TEST_S3_BUCKET",
+    ]:
+        assert setting in integration_env
+
+
+def test_backend_quality_job_is_isolated_from_integration_environment() -> None:
+    backend = _read(WORKFLOWS / "backend.yml")
+
+    quality_job = backend.split("  quality:", maxsplit=1)[1].split("  integration:", maxsplit=1)[0]
+    assert "WORKFLOWFORGE_TEST_" not in quality_job
+    assert "docker-compose.ci.yml" not in quality_job
 
 
 def test_frontend_workflow_uses_corepack_and_frozen_pnpm_install() -> None:

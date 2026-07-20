@@ -49,11 +49,20 @@ async def test_required_dependency_adapters_succeed_against_compose() -> None:
     redis_client = create_redis_client(RedisSettings(host=redis_host, port=redis_port))
     s3_settings = S3Settings(
         endpoint_url=s3_endpoint_url,
-        access_key=os.environ.get("WORKFLOWFORGE_S3_ACCESS_KEY", "workflowforge"),
-        secret_key=SecretStr(
-            os.environ.get("WORKFLOWFORGE_S3_SECRET_KEY", "workflowforge_dev_secret")
+        access_key=os.environ.get(
+            "WORKFLOWFORGE_TEST_S3_ACCESS_KEY",
+            os.environ.get("WORKFLOWFORGE_S3_ACCESS_KEY", "workflowforge"),
         ),
-        bucket=os.environ.get("WORKFLOWFORGE_S3_BUCKET", "workflowforge"),
+        secret_key=SecretStr(
+            os.environ.get(
+                "WORKFLOWFORGE_TEST_S3_SECRET_KEY",
+                os.environ.get("WORKFLOWFORGE_S3_SECRET_KEY", "workflowforge_dev_secret"),
+            )
+        ),
+        bucket=os.environ.get(
+            "WORKFLOWFORGE_TEST_S3_BUCKET",
+            os.environ.get("WORKFLOWFORGE_S3_BUCKET", "workflowforge"),
+        ),
     )
     s3_client = create_s3_client(s3_settings)
 

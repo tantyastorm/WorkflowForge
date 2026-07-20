@@ -313,3 +313,33 @@ def test_settings_ignore_unrelated_environment(monkeypatch: pytest.MonkeyPatch) 
     settings = Settings()
 
     assert settings.app_name == "WorkflowForge"
+
+
+def test_nested_settings_ignore_generic_os_environment(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    generic_values = {
+        "HOST": "bad-host",
+        "PORT": "1",
+        "NAME": "bad-name",
+        "USER": "runner",
+        "PASSWORD": "bad-password",
+        "ACCESS_KEY": "bad-access",
+        "SECRET_KEY": "bad-secret",
+        "BUCKET": "bad-bucket",
+        "REGION": "bad-region",
+        "DEFAULT_QUEUE": "bad.queue",
+        "HEARTBEAT_INTERVAL_SECONDS": "1",
+    }
+    for key, value in generic_values.items():
+        monkeypatch.setenv(key, value)
+
+    settings = Settings()
+
+    assert settings.api.host == "0.0.0.0"
+    assert settings.api.port == 8000
+    assert settings.database.user == "workflowforge"
+    assert settings.redis.host == "localhost"
+    assert settings.s3.secret_key.get_secret_value() == "workflowforge_dev_secret"
+    assert settings.celery.default_queue == "workflowforge"
+    assert settings.scheduler.heartbeat_interval_seconds == 30
