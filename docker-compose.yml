@@ -40,7 +40,7 @@ services:
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-workflowforge_dev_secret}
     ports:
       - "${WORKFLOWFORGE_MINIO_API_HOST_PORT:-9000}:9000"
-      - "${WORKFLOWFORGE_MINIO_CONSOLE_HOST_PORT:-9001}:9001"
+      - "${WORKFLOWFORGE_MINIO_CONSOLE_HOST_PORT:-19001}:9001"
     volumes:
       - minio_data:/data
     healthcheck:
@@ -301,7 +301,29 @@ services:
       start_period: 20s
     restart: unless-stopped
 
+  web:
+    image: node:24.11.1-bookworm-slim
+    working_dir: /workspace/apps/web
+    command:
+      [
+        "sh",
+        "-lc",
+        "corepack enable && corepack pnpm install --frozen-lockfile && corepack pnpm dev --host 0.0.0.0 --port 5173",
+      ]
+    environment:
+      VITE_API_BASE_URL: ${VITE_API_BASE_URL:-http://localhost:8000}
+    ports:
+      - "${WORKFLOWFORGE_WEB_HOST_PORT:-5173}:5173"
+    volumes:
+      - .:/workspace
+      - web_node_modules:/workspace/apps/web/node_modules
+    depends_on:
+      api:
+        condition: service_healthy
+    restart: unless-stopped
+
 volumes:
   postgres_data:
   redis_data:
   minio_data:
+  web_node_modules:

@@ -73,7 +73,6 @@ Run the backend and frontend together from the repository root:
 ```powershell
 Copy-Item .env.example .env
 docker compose up --build -d
-corepack pnpm --dir apps/web dev --host 127.0.0.1
 ```
 
 Then open `http://127.0.0.1:5173/status`. Local frontend env overrides belong in untracked Vite env files.

@@ -8,7 +8,7 @@ WorkflowForge is designed as a modular monolith: one repository, one coordinated
 
 The planned V1 system uses PostgreSQL as the durable source of truth for workflow state, Redis for queues, locks, caching, heartbeats, and transient coordination, and S3-compatible object storage for documents and artifacts. External and frontend communication goes through a REST API. Background workers execute asynchronous work, a scheduler process publishes periodic work, and a React operator console supports human operation.
 
-Docker Compose is the planned local development environment for running the API, worker, scheduler, web frontend, PostgreSQL, Redis, MinIO, and migrations together.
+Docker Compose is the local development environment for running the API, worker, scheduler, web frontend, PostgreSQL, Redis, MinIO, and migrations together.
 
 Separate API, worker, scheduler, and web processes do not make WorkflowForge microservices. They are runtime processes inside one modular monolith with coordinated releases and shared internal packages.
 
@@ -321,11 +321,9 @@ Retries must be explicit and bounded. Tasks must be idempotent where retries are
 
 ## Migration Strategy
 
-WorkflowForge is planned to use Alembic for PostgreSQL migrations. Migrations should support starting from an empty database, prefer forward-only production movement, and provide downgrade support where practical.
+WorkflowForge uses Alembic for PostgreSQL migrations. Migrations should support starting from an empty database, prefer forward-only production movement, and provide downgrade support where practical.
 
 Migrations should run through a dedicated process or command. API startup must not race multiple migration attempts. Application code and migrations must remain compatible during deployment transitions.
-
-No migrations are created in this commit.
 
 ## Configuration
 
@@ -347,11 +345,9 @@ Browser execution should be isolated. External requests should be controlled and
 
 ## Local Development Architecture
 
-Later Phase 1 commits are planned to introduce Docker Compose for local development with API, frontend, worker, scheduler, PostgreSQL, Redis, MinIO, and a migration service.
+Phase 1 includes Docker Compose for local development with API, frontend, worker, scheduler, PostgreSQL, Redis, MinIO, and a migration service.
 
 The local environment should use health-based startup ordering, persistent local volumes, and a one-command startup target where practical.
-
-This local development architecture is not implemented in this documentation commit.
 
 ## Testing Strategy
 

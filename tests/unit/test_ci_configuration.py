@@ -130,6 +130,7 @@ def test_docker_workflow_validates_compose_and_shared_backend_image() -> None:
     assert "docker compose config" in docker
     assert "docker compose build api" in docker
     assert "api, worker, scheduler, and migrate services" in docker
+    assert '"apps/web/**"' in docker
     assert "docker/login-action" not in docker
     assert "docker/build-push-action" not in docker
 

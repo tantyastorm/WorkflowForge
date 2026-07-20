@@ -32,12 +32,13 @@ Current services:
 
 - `postgres`: PostgreSQL on host port `5432` by default.
 - `redis`: Redis with append-only persistence on host port `6379` by default.
-- `minio`: S3-compatible object storage on host port `9000`, console on `9001`.
+- `minio`: S3-compatible object storage on host port `9000`, console on `19001`.
 - `minio-init`: one-shot bucket initialization for `WORKFLOWFORGE_S3_BUCKET`.
 - `migrate`: one-shot `uv run alembic upgrade head`.
 - `api`: FastAPI on host port `8000`.
 - `worker`: Celery worker consuming the default and diagnostic queues.
 - `scheduler`: Celery Beat process publishing the diagnostic scheduler heartbeat.
+- `web`: Vite frontend on host port `5173`.
 
 Compose service hostnames are `postgres`, `redis`, and `minio`. Host-side tools use `localhost` plus the mapped host port.
 
@@ -61,6 +62,6 @@ docker compose down -v
 
 The `-v` reset deletes local development database, Redis, and MinIO data.
 
-The API waits for PostgreSQL, Redis, and MinIO health checks, successful MinIO bucket initialization, and successful migrations. API startup does not run Alembic itself.
+The API waits for PostgreSQL, Redis, and MinIO health checks, successful MinIO bucket initialization, and successful migrations. API startup does not run Alembic itself. The web service waits for API readiness and uses the public browser-facing `VITE_API_BASE_URL` value.
 
 The GitHub Actions integration job starts this Compose stack with CI-only local credentials and deterministic host ports, waits for `/health/dependencies`, runs the integration test suite without skips, prints service logs on failure, and tears the CI stack down with ephemeral volumes. Local development shutdown remains `docker compose down` unless you intentionally want the destructive `-v` reset.
