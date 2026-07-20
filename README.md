@@ -65,6 +65,12 @@ scripts/               Developer and automation scripts.
 
 Current Phase 1 work is limited to repository structure, documentation, contribution practices, and architecture boundary definitions. Runtime implementation will be introduced in later focused commits.
 
+## Documentation
+
+- [Product definition](docs/product.md)
+- [V1 scope](docs/v1-scope.md)
+- [Glossary](docs/glossary.md)
+
 ## Contributing
 
 WorkflowForge is not yet ready for broad external contribution. Early contributions should be small, focused, and aligned with the architecture boundaries in this repository. See [CONTRIBUTING.md](CONTRIBUTING.md) and [docs/commits.md](docs/commits.md).
