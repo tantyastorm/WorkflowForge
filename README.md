@@ -73,6 +73,26 @@ Current Phase 1 work is limited to repository structure, documentation, contribu
 - [ADR 0001: Modular monolith](docs/adr/0001-modular-monolith.md)
 - [Glossary](docs/glossary.md)
 
+## Backend Workspace
+
+The Python backend uses Python 3.12, `uv`, and editable workspace packages. After activating `.venv`, install the backend workspace with:
+
+```powershell
+uv sync --all-packages --group dev
+```
+
+Current quality checks:
+
+```powershell
+uv run ruff format --check .
+uv run ruff check .
+uv run mypy apps packages tests
+uv run pytest
+uv run pytest --cov --cov-report=term-missing
+```
+
+Workspace distributions are `workflowforge-domain`, `workflowforge-contracts`, `workflowforge-application`, `workflowforge-infrastructure`, `workflowforge-api`, `workflowforge-worker`, and `workflowforge-scheduler`.
+
 ## Contributing
 
 WorkflowForge is not yet ready for broad external contribution. Early contributions should be small, focused, and aligned with the architecture boundaries in this repository. See [CONTRIBUTING.md](CONTRIBUTING.md) and [docs/commits.md](docs/commits.md).

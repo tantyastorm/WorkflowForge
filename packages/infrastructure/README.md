@@ -7,3 +7,5 @@ Does not belong here: domain rules, application use case definitions, frontend c
 Owner: infrastructure adapter layer.
 
 Dependency direction: implements ports defined by inner layers and may depend on `packages/domain` and `packages/contracts`. Apps compose these adapters with application services.
+
+Python workspace distribution: `workflowforge-infrastructure`.

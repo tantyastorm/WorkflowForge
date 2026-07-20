@@ -7,3 +7,5 @@ Does not belong here: domain rules, infrastructure implementations, worker jobs,
 Owner: `apps/api` process composition root.
 
 Dependency direction: may depend on `packages/application`, `packages/contracts`, and infrastructure adapters only through composition wiring. Runtime code is not implemented yet.
+
+Python workspace distribution: `workflowforge-api`.

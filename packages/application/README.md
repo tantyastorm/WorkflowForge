@@ -7,3 +7,5 @@ Does not belong here: framework entry points, database implementations, external
 Owner: application layer.
 
 Dependency direction: may depend on `packages/domain` and `packages/contracts`. It must not depend directly on `packages/infrastructure`.
+
+Python workspace distribution: `workflowforge-application`.

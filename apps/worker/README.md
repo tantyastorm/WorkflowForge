@@ -7,3 +7,5 @@ Does not belong here: domain rules, API routes, scheduler triggers, frontend cod
 Owner: `apps/worker` process composition root.
 
 Dependency direction: may depend on `packages/application`, `packages/contracts`, and infrastructure adapters only through composition wiring. Runtime code is not implemented yet.
+
+Python workspace distribution: `workflowforge-worker`.

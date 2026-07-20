@@ -7,3 +7,5 @@ Does not belong here: framework code, database access, queues, HTTP clients, bro
 Owner: inner domain layer.
 
 Dependency direction: must remain independent of application frameworks and infrastructure. It may use stable contracts only when those contracts are domain-neutral.
+
+Python workspace distribution: `workflowforge-domain`.

@@ -1,0 +1,102 @@
+[project]
+name = "workflowforge-workspace"
+version = "0.1.0a1"
+description = "WorkflowForge Python workspace configuration."
+requires-python = ">=3.12,<3.13"
+dependencies = []
+
+[dependency-groups]
+dev = [
+  "mypy>=1.18.2",
+  "pytest>=8.4.2",
+  "pytest-asyncio>=1.2.0",
+  "pytest-cov>=7.0.0",
+  "ruff>=0.14.1",
+]
+
+[tool.uv]
+package = false
+
+[tool.uv.workspace]
+members = [
+  "apps/api",
+  "apps/worker",
+  "apps/scheduler",
+  "packages/domain",
+  "packages/contracts",
+  "packages/application",
+  "packages/infrastructure",
+]
+
+[tool.uv.sources]
+workflowforge-domain = { workspace = true }
+workflowforge-contracts = { workspace = true }
+workflowforge-application = { workspace = true }
+workflowforge-infrastructure = { workspace = true }
+workflowforge-api = { workspace = true }
+workflowforge-worker = { workspace = true }
+workflowforge-scheduler = { workspace = true }
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+
+[tool.ruff.lint]
+select = [
+  "E",
+  "F",
+  "B",
+  "C4",
+  "I",
+  "UP",
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**/*.py" = ["S101"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+explicit_package_bases = true
+mypy_path = [
+  "apps/api/src",
+  "apps/worker/src",
+  "apps/scheduler/src",
+  "packages/domain/src",
+  "packages/contracts/src",
+  "packages/application/src",
+  "packages/infrastructure/src",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+addopts = [
+  "--strict-markers",
+  "--strict-config",
+]
+filterwarnings = [
+  "error",
+]
+
+[tool.coverage.run]
+branch = true
+source = [
+  "workflowforge_api",
+  "workflowforge_worker",
+  "workflowforge_scheduler",
+  "workflowforge_domain",
+  "workflowforge_contracts",
+  "workflowforge_application",
+  "workflowforge_infrastructure",
+]
+omit = [
+  "*/__init__.py",
+]
+
+[tool.coverage.report]
+show_missing = true
+fail_under = 80
+exclude_also = [
+  "if TYPE_CHECKING:",
+]

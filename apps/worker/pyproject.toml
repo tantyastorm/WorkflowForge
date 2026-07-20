@@ -1,0 +1,17 @@
+[project]
+name = "workflowforge-worker"
+version = "0.1.0a1"
+description = "WorkflowForge worker process composition package."
+requires-python = ">=3.12,<3.13"
+dependencies = [
+  "workflowforge-application",
+  "workflowforge-contracts",
+  "workflowforge-infrastructure",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/workflowforge_worker"]
