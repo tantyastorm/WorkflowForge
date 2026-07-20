@@ -149,8 +149,10 @@ activemq-data/
 
 # Environments
 .env
+.env.*
+!.env.example
 .envrc
-.venv
+.venv/
 env/
 venv/
 ENV/
@@ -216,3 +218,51 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Node / frontend
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+.npm/
+.pnpm-store/
+.yarn/
+!.yarn/releases/
+!.yarn/plugins/
+!.yarn/sdks/
+!.yarn/versions/
+.next/
+.nuxt/
+.svelte-kit/
+out/
+coverage/
+vite.svg
+*.tsbuildinfo
+
+# IDEs and editor state
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Docker and local volumes
+.docker/
+docker-data/
+volumes/
+tmp/
+temp/
+
+# OS files
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Local logs
+logs/
+*.log
+
+# Temporary files
+*.tmp
+*.temp

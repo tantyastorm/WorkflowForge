@@ -1,0 +1,39 @@
+name: Feature request
+description: Suggest a focused WorkflowForge capability or improvement.
+title: "feat: "
+labels:
+  - enhancement
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What user or operator problem should this solve?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: Describe the smallest useful version of the change.
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - API
+        - Worker
+        - Scheduler
+        - Web
+        - Domain
+        - Infrastructure
+        - Contracts
+        - Documentation
+        - Unsure
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Optional trade-offs, constraints, or related ideas.
