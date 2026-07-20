@@ -4,6 +4,7 @@ import pytest
 from alembic import command
 from alembic.config import Config
 from sqlalchemy import inspect
+from workflowforge_infrastructure.config import DatabaseSettings
 from workflowforge_infrastructure.database import create_sync_migration_engine
 
 from tests.integration.database.utils import require_postgresql
@@ -12,7 +13,7 @@ from tests.integration.database.utils import require_postgresql
 @pytest.mark.integration
 def test_baseline_migration_upgrade_downgrade_and_reupgrade() -> None:
     settings = require_postgresql()
-    alembic_config = Config("alembic.ini")
+    alembic_config = _alembic_config(settings)
 
     command.downgrade(alembic_config, "base")
     command.upgrade(alembic_config, "head")
@@ -35,7 +36,7 @@ def test_baseline_migration_upgrade_downgrade_and_reupgrade() -> None:
 @pytest.mark.integration
 def test_metadata_has_no_business_tables_after_baseline() -> None:
     settings = require_postgresql()
-    command.upgrade(Config("alembic.ini"), "head")
+    command.upgrade(_alembic_config(settings), "head")
 
     engine = create_sync_migration_engine(settings)
     try:
@@ -44,3 +45,9 @@ def test_metadata_has_no_business_tables_after_baseline() -> None:
         engine.dispose()
 
     assert table_names == ["alembic_version"]
+
+
+def _alembic_config(settings: DatabaseSettings) -> Config:
+    config = Config("alembic.ini")
+    config.attributes["database_settings"] = settings
+    return config

@@ -43,11 +43,31 @@ def test_backend_workflow_runs_required_quality_commands() -> None:
 def test_integration_workflow_uses_compose_and_fails_on_skips() -> None:
     backend = _read(WORKFLOWS / "backend.yml")
 
-    assert "docker compose up --build -d" in backend
+    assert "docker compose -f docker-compose.yml -f docker-compose.ci.yml up --build -d" in backend
     assert "uv run pytest -m integration -rA" in backend
     assert "Integration tests skipped unexpectedly in CI." in backend
-    assert "docker compose logs api worker scheduler migrate minio-init" in backend
-    assert "docker compose down -v" in backend
+    assert (
+        "docker compose -f docker-compose.yml -f docker-compose.ci.yml "
+        "logs api worker scheduler migrate minio-init"
+    ) in backend
+    assert "docker compose -f docker-compose.yml -f docker-compose.ci.yml down -v" in backend
+    assert "WORKFLOWFORGE_TEST_API_BASE_URL" in backend
+    assert "WORKFLOWFORGE_TEST_DATABASE_HOST_PORT" in backend
+    assert "WORKFLOWFORGE_TEST_S3_ENDPOINT_URL" in backend
+
+
+def test_integration_workflow_keeps_host_ports_out_of_app_settings_namespace() -> None:
+    backend = _read(WORKFLOWS / "backend.yml")
+
+    forbidden_settings = [
+        "WORKFLOWFORGE_API_HOST_PORT",
+        "WORKFLOWFORGE_REDIS_HOST_PORT",
+        "WORKFLOWFORGE_POSTGRES_HOST_PORT",
+        "WORKFLOWFORGE_MINIO_API_HOST_PORT",
+        "WORKFLOWFORGE_MINIO_CONSOLE_HOST_PORT",
+    ]
+    for setting in forbidden_settings:
+        assert setting not in backend
 
 
 def test_frontend_workflow_uses_corepack_and_frozen_pnpm_install() -> None:
