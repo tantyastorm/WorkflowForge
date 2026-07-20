@@ -12,17 +12,35 @@ from workflowforge_application.authorization import (
     ensure_self_role_change_allowed,
 )
 from workflowforge_application.errors import ApplicationError
+from workflowforge_application.identity import (
+    DuplicateNormalizedEmailError,
+    DuplicateOrganizationMembershipError,
+    DuplicateOrganizationSlugError,
+    IdentityApplicationError,
+    MembershipRepository,
+    MissingIdentityReferenceError,
+    OrganizationRepository,
+    UserRepository,
+)
 
 __all__ = [
     "ApplicationError",
     "AuthorizationError",
     "AuthorizationPolicy",
+    "DuplicateNormalizedEmailError",
+    "DuplicateOrganizationMembershipError",
+    "DuplicateOrganizationSlugError",
+    "IdentityApplicationError",
     "MembershipAdministrationDenied",
     "MembershipAdministrationMutation",
     "MembershipAdministrationPolicy",
+    "MembershipRepository",
+    "MissingIdentityReferenceError",
+    "OrganizationRepository",
     "PermissionDenied",
     "TenantBoundaryViolation",
     "TenantContext",
+    "UserRepository",
     "__version__",
     "ensure_self_role_change_allowed",
 ]

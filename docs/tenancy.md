@@ -48,6 +48,8 @@ Phase 2 tenant isolation uses:
 
 Repository interfaces for tenant-owned data should accept `organization_id` or `TenantContext` deliberately. Infrastructure query implementations must constrain tenant-owned reads and writes by organization.
 
+Phase 2 persists organizations and memberships. Organization ownership is represented through owner memberships, not an `owner_user_id` shortcut on organizations. Membership repository operations that retrieve tenant-owned membership records include `organization_id` where appropriate.
+
 ## PostgreSQL RLS Deferral
 
 PostgreSQL row-level security is deferred for Phase 2.

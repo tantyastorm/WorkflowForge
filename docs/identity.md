@@ -101,3 +101,9 @@ WorkflowForge will not ship default admin credentials. A CLI bootstrap command f
 Identity domain rules belong in `packages/domain` where they are durable business concepts. Session use cases, password policy decisions, refresh-token rotation, and authentication ports belong in `packages/application` or `packages/contracts` as appropriate. Password hashing, token signing, token digesting, Redis rate limiting, and persistence adapters belong in `packages/infrastructure`. HTTP cookie handling, bearer-token parsing, response mapping, and dependency composition belong in `apps/api`. Frontend authentication state and login/logout UX belong in `apps/web`.
 
 WorkflowForge should not create a generic `AuthService` that owns identity, sessions, tenancy, authorization, and audit together.
+
+## Persistence Foundation
+
+Phase 2 persists users with display email, normalized email, display name, active state, and lifecycle timestamps. Normalized email remains the uniqueness key and uses the same `email.strip().casefold()` behavior as the domain value object.
+
+Password credentials, sessions, refresh tokens, login, registration use cases, and API endpoints remain outside this persistence step.

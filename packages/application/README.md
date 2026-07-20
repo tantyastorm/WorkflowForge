@@ -35,3 +35,9 @@ Current concepts:
 - `PermissionDenied`, `TenantBoundaryViolation`, and `MembershipAdministrationDenied`: transport-neutral errors for future API mapping.
 
 This package does not resolve tenant context from HTTP requests, query persistence, authenticate users, issue tokens, write audit records, or expose API schemas.
+
+## Identity Repository Ports
+
+The identity application boundary defines repository ports for users, organizations, and memberships. Ports use domain entities and value objects only; SQLAlchemy models remain infrastructure details.
+
+The ports are intentionally focused on current identity persistence needs rather than a generic base repository. Membership lookups that target tenant-owned membership state include organization identity to make cross-tenant access harder to express accidentally.

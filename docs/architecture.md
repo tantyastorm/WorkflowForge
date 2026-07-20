@@ -347,6 +347,8 @@ Roles are `owner`, `admin`, `operator`, `reviewer`, and `auditor`. Permission ma
 
 Audit records are append-only through application behavior and include tenant-aware context where available. Audit metadata is bounded and must not contain secret or token material. Tenant-scoped audit queries require authorization, while global events are handled deliberately.
 
+The identity persistence foundation stores users, organizations, and memberships in PostgreSQL. It does not include password credential storage, sessions, refresh tokens, authentication endpoints, tenant context resolution from HTTP, or audit persistence.
+
 ## Migration Strategy
 
 WorkflowForge uses Alembic for PostgreSQL migrations. Migrations should support starting from an empty database, prefer forward-only production movement, and provide downgrade support where practical.

@@ -63,3 +63,11 @@ Infrastructure implements the application document repository port with SQLAlche
 - creation and update timestamps.
 
 The table enforces non-negative byte size, valid initial lifecycle statuses, unique content hashes, and unique storage object keys. The repository maps rows to domain objects and translates duplicate inserts into sanitized application errors. It does not expose ORM models outside infrastructure and does not write file bytes to MinIO.
+
+## Identity Persistence
+
+Infrastructure implements application repository ports for users, organizations, and memberships with SQLAlchemy. The `users` table stores display email, normalized email, display name, active state, and lifecycle timestamps. The `organizations` table stores organization name, slug, active state, and lifecycle timestamps. The `memberships` table stores user-to-organization membership role, status, and lifecycle timestamps.
+
+Role and membership status values are persisted as bounded strings with database check constraints rather than PostgreSQL native enums. This keeps public enum values stable while avoiding enum-alter migration friction.
+
+Membership repository methods require organization identity for tenant-owned membership lookups where appropriate. Repositories map rows to validated domain entities, translate duplicate email, slug, and membership conflicts into application errors, and do not commit transactions implicitly.
