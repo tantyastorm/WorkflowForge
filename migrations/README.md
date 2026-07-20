@@ -25,3 +25,29 @@ uv run alembic downgrade base
 API startup must not run migrations automatically. A later local infrastructure commit may add a dedicated migration service that runs `alembic upgrade head`.
 
 Production favors forward migrations. Downgrades are supported where practical for development and validation.
+
+## Local Compose Migration Service
+
+Docker Compose includes a one-shot `migrate` service that runs:
+
+```powershell
+uv run alembic upgrade head
+```
+
+The API depends on successful completion of this service. Migrations are not run from API startup or lifespan handling.
+
+When running migrations from the host against Compose PostgreSQL, use `localhost` and the mapped PostgreSQL host port. Inside Compose, the database hostname is `postgres`.
+
+Useful host-side validation commands:
+
+```powershell
+$env:WORKFLOWFORGE_DATABASE_HOST = "localhost"
+$env:WORKFLOWFORGE_DATABASE_PORT = "5432"
+uv run pytest -m integration
+uv run alembic upgrade head
+uv run alembic current
+uv run alembic downgrade base
+uv run alembic upgrade head
+```
+
+The baseline migration intentionally creates no business tables; only Alembic metadata should exist after upgrade.

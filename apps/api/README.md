@@ -20,6 +20,14 @@ Run from the repository root:
 uv run uvicorn workflowforge_api.main:app --host 127.0.0.1 --port 8000
 ```
 
+The Docker Compose API service uses the same application entry point:
+
+```powershell
+docker compose up --build api
+```
+
+The container runs Uvicorn without reload, exposes port `8000` by default, waits for PostgreSQL health, Redis health, MinIO health, successful MinIO bucket initialization, and the dedicated Alembic migration service. API startup does not run migrations.
+
 Operational health routes are process-level routes outside product API versioning:
 
 - `GET /health/live` returns `200` when the process can answer HTTP.
@@ -32,3 +40,13 @@ Product routes will be versioned under `WORKFLOWFORGE_API_V1_PREFIX`, which defa
 API documentation is available at `/docs`, `/redoc`, and `/openapi.json` when `WORKFLOWFORGE_API_DOCS_ENABLED=true`. Those routes are disabled when the setting is false.
 
 Every response includes `X-Correlation-ID`. Incoming safe correlation IDs are preserved; missing or malformed values are replaced and bound to request-local structured logging context.
+
+Smoke-test a running local Compose API:
+
+```powershell
+Invoke-RestMethod http://127.0.0.1:8000/health/live
+Invoke-RestMethod http://127.0.0.1:8000/health/ready
+Invoke-WebRequest http://127.0.0.1:8000/openapi.json
+```
+
+The dependency-health endpoint is still absent in this step.

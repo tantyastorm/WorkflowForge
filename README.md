@@ -102,6 +102,15 @@ uv run alembic downgrade base
 
 Database integration tests require a real PostgreSQL database configured through `WORKFLOWFORGE_DATABASE_*` environment variables.
 
+Local infrastructure starts with Docker Compose:
+
+```powershell
+Copy-Item .env.example .env
+docker compose up --build
+```
+
+This starts PostgreSQL, Redis, MinIO, a one-shot MinIO bucket initializer, a one-shot Alembic migration service, and the API. It does not start workers, a scheduler, a frontend, Celery, or dependency-health aggregation.
+
 Run the API process from the repository root:
 
 ```powershell
@@ -114,6 +123,16 @@ API health endpoints:
 - `GET /health/ready` confirms FastAPI startup completed for the current process instance.
 
 Dependency health is intentionally not exposed yet. API documentation is available at `/docs`, `/redoc`, and `/openapi.json` unless disabled with `WORKFLOWFORGE_API_DOCS_ENABLED=false`. Responses include `X-Correlation-ID` for request tracing.
+
+Default local ports are PostgreSQL `5432`, Redis `6379`, MinIO API `9000`, MinIO console `9001`, and API `8000`. Compose services use internal hostnames such as `postgres`, `redis`, and `minio`; host-side tools should use `localhost` with the configured host ports.
+
+Stop local services with:
+
+```powershell
+docker compose down
+```
+
+Use `docker compose down -v` only for a destructive reset; it deletes local PostgreSQL, Redis, and MinIO development data.
 
 Workspace distributions are `workflowforge-domain`, `workflowforge-contracts`, `workflowforge-application`, `workflowforge-infrastructure`, `workflowforge-api`, `workflowforge-worker`, and `workflowforge-scheduler`.
 

@@ -22,8 +22,9 @@ def test_baseline_migration_upgrade_downgrade_and_reupgrade() -> None:
     try:
         inspector = inspect(engine)
         assert inspector.get_table_names() == ["alembic_version"]
-        version_rows = engine.connect().exec_driver_sql("SELECT version_num FROM alembic_version")
-        assert version_rows.scalar_one() == "0001_baseline"
+        with engine.connect() as connection:
+            version_rows = connection.exec_driver_sql("SELECT version_num FROM alembic_version")
+            assert version_rows.scalar_one() == "0001_baseline"
     finally:
         engine.dispose()
 
