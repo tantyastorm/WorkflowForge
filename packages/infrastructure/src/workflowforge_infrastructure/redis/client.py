@@ -23,4 +23,4 @@ def create_redis_client(settings: RedisSettings) -> Redis:
 async def close_redis_client(client: Redis) -> None:
     """Close an async Redis client."""
 
-    await client.aclose()
+    await client.aclose(close_connection_pool=True)

@@ -21,10 +21,11 @@ def _require_tcp(host: str, port: int, name: str) -> None:
 
 @pytest.mark.integration
 async def test_scheduler_publishes_recent_heartbeat_against_compose() -> None:
+    redis_host = os.environ.get("WORKFLOWFORGE_TEST_REDIS_HOST", "localhost")
     redis_port = int(os.environ.get("WORKFLOWFORGE_TEST_REDIS_HOST_PORT", "6379"))
-    _require_tcp("localhost", redis_port, "Redis")
+    _require_tcp(redis_host, redis_port, "Redis")
     settings = SchedulerSettings()
-    client = create_redis_client(RedisSettings(host="localhost", port=redis_port))
+    client = create_redis_client(RedisSettings(host=redis_host, port=redis_port))
 
     try:
         heartbeat = await _wait_for_heartbeat(client, settings)

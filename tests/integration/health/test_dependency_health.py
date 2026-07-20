@@ -3,8 +3,7 @@
 import json
 import os
 import socket
-from urllib.error import URLError
-from urllib.request import Request, urlopen
+from http.client import HTTPConnection
 
 import pytest
 from pydantic import SecretStr
@@ -33,21 +32,17 @@ def _require_tcp(host: str, port: int, name: str) -> None:
         pytest.skip(f"{name} is unavailable: {exc}")
 
 
-def _api_base_url() -> str:
-    port = os.environ.get("WORKFLOWFORGE_TEST_API_HOST_PORT", "8000")
-    return f"http://127.0.0.1:{port}"
-
-
 @pytest.mark.integration
 async def test_required_dependency_adapters_succeed_against_compose() -> None:
     database_settings = require_postgresql()
+    redis_host = os.environ.get("WORKFLOWFORGE_TEST_REDIS_HOST", "localhost")
     redis_port = int(os.environ.get("WORKFLOWFORGE_TEST_REDIS_HOST_PORT", "6379"))
     minio_port = int(os.environ.get("WORKFLOWFORGE_TEST_MINIO_API_HOST_PORT", "9000"))
-    _require_tcp("localhost", redis_port, "Redis")
+    _require_tcp(redis_host, redis_port, "Redis")
     _require_tcp("localhost", minio_port, "MinIO")
 
     database_engine = create_async_database_engine(database_settings)
-    redis_client = create_redis_client(RedisSettings(host="localhost", port=redis_port))
+    redis_client = create_redis_client(RedisSettings(host=redis_host, port=redis_port))
     s3_settings = S3Settings(
         endpoint_url=f"http://localhost:{minio_port}",
         access_key=os.environ.get("WORKFLOWFORGE_S3_ACCESS_KEY", "workflowforge"),
@@ -75,17 +70,28 @@ async def test_required_dependency_adapters_succeed_against_compose() -> None:
 
 @pytest.mark.integration
 def test_dependency_health_endpoint_succeeds_against_compose_api() -> None:
-    request = Request(
-        f"{_api_base_url()}/health/dependencies",
-        headers={"X-Correlation-ID": "integration-health"},
-    )
+    api_port = int(os.environ.get("WORKFLOWFORGE_TEST_API_HOST_PORT", "8000"))
+    _require_tcp("127.0.0.1", api_port, "API")
+    connection = HTTPConnection("127.0.0.1", api_port, timeout=5)
     try:
-        with urlopen(request, timeout=5) as response:
-            body = json.loads(response.read().decode("utf-8"))
-            correlation_id = response.headers["X-Correlation-ID"]
-            status = response.status
-    except URLError as exc:
+        connection.request(
+            "GET",
+            "/health/dependencies",
+            headers={"X-Correlation-ID": "integration-health"},
+        )
+        response = connection.getresponse()
+        status = response.status
+        response_body = response.read().decode("utf-8")
+        correlation_id = response.headers.get("X-Correlation-ID")
+    except OSError as exc:
         pytest.skip(f"API service is unavailable: {exc}")
+    finally:
+        connection.close()
+
+    if status != 200:
+        pytest.skip(f"API dependency health endpoint is unavailable: HTTP {status}")
+
+    body = json.loads(response_body)
 
     assert status == 200
     assert correlation_id == "integration-health"

@@ -18,14 +18,16 @@ class FakeRedisClient:
         self._result = result
         self._exc = exc
         self.closed = False
+        self.closed_connection_pool = False
 
     async def ping(self) -> object:
         if self._exc is not None:
             raise self._exc
         return self._result
 
-    async def aclose(self) -> None:
+    async def aclose(self, *, close_connection_pool: bool = False) -> None:
         self.closed = True
+        self.closed_connection_pool = close_connection_pool
 
 
 async def test_redis_health_ping_success() -> None:
@@ -73,6 +75,7 @@ async def test_close_redis_client_closes_client() -> None:
     await close_redis_client(cast("Any", client))
 
     assert client.closed is True
+    assert client.closed_connection_pool is True
 
 
 def test_create_redis_client_uses_settings_without_connecting() -> None:

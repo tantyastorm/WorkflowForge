@@ -6,7 +6,7 @@ import socket
 import pytest
 from workflowforge_contracts import DIAGNOSTIC_ECHO_TASK_NAME, DiagnosticEchoPayload
 from workflowforge_infrastructure.config import RedisSettings, Settings
-from workflowforge_infrastructure.tasks import create_celery_app
+from workflowforge_infrastructure.tasks import close_celery_resources, create_celery_app
 
 
 def _require_tcp(host: str, port: int, name: str) -> None:
@@ -19,10 +19,12 @@ def _require_tcp(host: str, port: int, name: str) -> None:
 
 @pytest.mark.integration
 def test_worker_consumes_diagnostic_echo_task_against_compose() -> None:
+    redis_host = os.environ.get("WORKFLOWFORGE_TEST_REDIS_HOST", "localhost")
     redis_port = int(os.environ.get("WORKFLOWFORGE_TEST_REDIS_HOST_PORT", "6379"))
-    _require_tcp("localhost", redis_port, "Redis")
-    settings = Settings(redis=RedisSettings(host="localhost", port=redis_port))
+    _require_tcp(redis_host, redis_port, "Redis")
+    settings = Settings(redis=RedisSettings(host=redis_host, port=redis_port))
     app = create_celery_app(settings)
+    async_result = None
     payload = DiagnosticEchoPayload(message="hello")
 
     try:
@@ -33,7 +35,7 @@ def test_worker_consumes_diagnostic_echo_task_against_compose() -> None:
         )
         result = async_result.get(timeout=20)
     finally:
-        app.close()
+        close_celery_resources(app, async_result)
 
     assert result["message"] == "hello"
     assert result["task_name"] == DIAGNOSTIC_ECHO_TASK_NAME

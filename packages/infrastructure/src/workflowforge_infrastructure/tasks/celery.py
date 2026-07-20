@@ -1,6 +1,7 @@
 """Celery application factory."""
 
 import importlib
+from contextlib import suppress
 from typing import Any
 
 from workflowforge_infrastructure.config import Settings, get_settings
@@ -46,3 +47,40 @@ def create_celery_app(settings: Settings | None = None) -> Any:
     register_diagnostic_tasks(app, resolved_settings)
     register_periodic_schedules(app, resolved_settings)
     return app
+
+
+def close_celery_resources(app: Any, result: Any | None = None) -> None:
+    """Release Celery client-side resources opened while publishing tasks."""
+
+    if result is not None:
+        with suppress(Exception):
+            result.forget()
+
+    backend = getattr(app, "backend", None)
+    result_consumer = getattr(backend, "result_consumer", None)
+    stop_result_consumer = getattr(result_consumer, "stop", None)
+    if callable(stop_result_consumer):
+        with suppress(Exception):
+            stop_result_consumer()
+
+    backend_client = getattr(backend, "client", None)
+    close_backend_client = getattr(backend_client, "close", None)
+    if callable(close_backend_client):
+        with suppress(Exception):
+            close_backend_client()
+
+    backend_connection_pool = getattr(backend_client, "connection_pool", None)
+    disconnect_backend_pool = getattr(backend_connection_pool, "disconnect", None)
+    if callable(disconnect_backend_pool):
+        with suppress(Exception):
+            disconnect_backend_pool()
+
+    for pool_name in ("pool", "producer_pool"):
+        pool = getattr(app, pool_name, None)
+        close_pool = getattr(pool, "force_close_all", None)
+        if callable(close_pool):
+            with suppress(Exception):
+                close_pool()
+
+    with suppress(Exception):
+        app.close()

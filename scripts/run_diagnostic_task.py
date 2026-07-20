@@ -8,7 +8,7 @@ from collections.abc import Sequence
 
 from workflowforge_contracts import DIAGNOSTIC_ECHO_TASK_NAME, DiagnosticEchoPayload
 from workflowforge_infrastructure.config import get_settings
-from workflowforge_infrastructure.tasks import create_celery_app
+from workflowforge_infrastructure.tasks import close_celery_resources, create_celery_app
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -24,6 +24,7 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     payload = DiagnosticEchoPayload(message=args.message)
     app = create_celery_app(get_settings())
+    async_result = None
     headers = {"x-correlation-id": args.correlation_id} if args.correlation_id else None
     try:
         async_result = app.send_task(
@@ -33,7 +34,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         )
         result = async_result.get(timeout=args.timeout)
     finally:
-        app.close()
+        close_celery_resources(app, async_result)
     print(json.dumps(result, indent=2, sort_keys=True))
     return 0
 
