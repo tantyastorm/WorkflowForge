@@ -32,11 +32,11 @@ Operational health routes are process-level routes outside product API versionin
 
 - `GET /health/live` returns `200` when the process can answer HTTP.
 - `GET /health/ready` returns `200` after FastAPI startup completes and `503` before startup or after shutdown.
-- `GET /health/dependencies` returns real dependency health for PostgreSQL, Redis, and object storage.
+- `GET /health/dependencies` returns real dependency health for PostgreSQL, Redis, object storage, the Celery worker, and the scheduler heartbeat.
 
-Liveness and readiness do not check external dependencies. Dependency health runs bounded PostgreSQL, Redis, and object-storage checks concurrently. It returns HTTP `200` when all required dependencies are healthy and HTTP `503` when any required dependency is unhealthy. Diagnostics are sanitized and do not include credentials, raw driver exceptions, or stack traces.
+Liveness and readiness do not check external dependencies. Dependency health runs bounded checks concurrently in this deterministic order: `postgresql`, `redis`, `object_storage`, `worker`, `scheduler`. It returns HTTP `200` when all required dependencies are healthy and HTTP `503` when any required dependency is unhealthy. Diagnostics are sanitized and do not include credentials, raw driver exceptions, broker URLs, or stack traces.
 
-Worker and scheduler health are not reported yet because those processes do not exist in this phase. The app does not return placeholder worker or scheduler states.
+API startup does not wait for a Celery worker or scheduler heartbeat. Those states are operational dependencies reported through `/health/dependencies`, while `/health/ready` remains scoped to FastAPI process readiness.
 
 Product routes will be versioned under `WORKFLOWFORGE_API_V1_PREFIX`, which defaults to `/api/v1`. No business routes are exposed yet.
 

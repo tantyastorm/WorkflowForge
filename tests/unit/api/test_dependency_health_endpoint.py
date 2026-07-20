@@ -42,6 +42,17 @@ def test_dependency_health_returns_200_when_all_dependencies_are_healthy() -> No
                     status=DependencyStatus.HEALTHY,
                     latency_ms=7.1,
                 ),
+                DependencyHealthResult(
+                    name="worker",
+                    status=DependencyStatus.HEALTHY,
+                    latency_ms=10.1,
+                    detail="1 worker responded.",
+                ),
+                DependencyHealthResult(
+                    name="scheduler",
+                    status=DependencyStatus.HEALTHY,
+                    latency_ms=2.1,
+                ),
             ),
         )
     )
@@ -58,9 +69,14 @@ def test_dependency_health_returns_200_when_all_dependencies_are_healthy() -> No
     assert body["status"] == "healthy"
     assert datetime.fromisoformat(body["checked_at"]).tzinfo is not None
     assert datetime.fromisoformat(body["checked_at"]).astimezone(UTC).tzinfo is UTC
-    assert list(body["dependencies"]) == ["postgresql", "redis", "object_storage"]
-    assert "worker" not in body["dependencies"]
-    assert "scheduler" not in body["dependencies"]
+    assert list(body["dependencies"]) == [
+        "postgresql",
+        "redis",
+        "object_storage",
+        "worker",
+        "scheduler",
+    ]
+    assert body["dependencies"]["worker"]["detail"] == "1 worker responded."
 
 
 def test_dependency_health_returns_503_with_sanitized_unhealthy_dependency() -> None:
@@ -97,3 +113,66 @@ def test_dependency_health_returns_503_with_sanitized_unhealthy_dependency() -> 
     }
     assert "redis://secret" not in response.text
     assert "Traceback" not in response.text
+
+
+def test_dependency_health_returns_503_when_worker_is_unhealthy() -> None:
+    app = create_app(Settings(environment=Environment.TEST))
+    app.state.dependency_health_service = FakeDependencyHealthService(
+        DependencyHealthReport(
+            status=DependencyStatus.UNHEALTHY,
+            dependencies=(
+                DependencyHealthResult(
+                    name="postgresql",
+                    status=DependencyStatus.HEALTHY,
+                    latency_ms=4.8,
+                ),
+                DependencyHealthResult(
+                    name="worker",
+                    status=DependencyStatus.UNHEALTHY,
+                    latency_ms=3000,
+                    detail="No workers responded.",
+                ),
+            ),
+        )
+    )
+
+    with TestClient(app) as client:
+        response = client.get("/health/dependencies")
+
+    body = response.json()
+    assert response.status_code == 503
+    assert body["dependencies"]["worker"]["detail"] == "No workers responded."
+
+
+def test_dependency_health_returns_503_when_scheduler_is_unhealthy() -> None:
+    app = create_app(Settings(environment=Environment.TEST))
+    app.state.dependency_health_service = FakeDependencyHealthService(
+        DependencyHealthReport(
+            status=DependencyStatus.UNHEALTHY,
+            dependencies=(
+                DependencyHealthResult(
+                    name="postgresql",
+                    status=DependencyStatus.HEALTHY,
+                    latency_ms=4.8,
+                ),
+                DependencyHealthResult(
+                    name="scheduler",
+                    status=DependencyStatus.UNHEALTHY,
+                    latency_ms=1,
+                    detail="Scheduler heartbeat is missing.",
+                ),
+            ),
+        )
+    )
+
+    with TestClient(app) as client:
+        live_response = client.get("/health/live")
+        ready_response = client.get("/health/ready")
+        dependency_response = client.get("/health/dependencies")
+
+    assert live_response.status_code == 200
+    assert ready_response.status_code == 200
+    assert dependency_response.status_code == 503
+    assert dependency_response.json()["dependencies"]["scheduler"]["detail"] == (
+        "Scheduler heartbeat is missing."
+    )

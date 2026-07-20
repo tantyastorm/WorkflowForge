@@ -4,9 +4,9 @@ WorkflowForge is an open-source operations platform for building, evaluating, an
 
 ## Project Status
 
-WorkflowForge is in early Phase 1 foundation work. The repository layout, contribution standards, architecture boundaries, Python workspace, database migration foundation, local infrastructure, and API health foundation are in place.
+WorkflowForge is in early Phase 1 foundation work. The repository layout, contribution standards, architecture boundaries, Python workspace, database migration foundation, local infrastructure, API health foundation, and Celery worker/scheduler process foundations are in place.
 
-This stage does not implement frontend tooling, authentication, workflow execution features, background workers, scheduler behavior, Celery tasks, or business object-storage APIs.
+This stage does not implement frontend tooling, authentication, workflow execution features, business worker tasks, scheduler workflow triggers, or business object-storage APIs.
 
 ## Planned Capabilities
 
@@ -109,7 +109,7 @@ Copy-Item .env.example .env
 docker compose up --build
 ```
 
-This starts PostgreSQL, Redis, MinIO, a one-shot MinIO bucket initializer, a one-shot Alembic migration service, and the API. It does not start workers, a scheduler, a frontend, or Celery.
+This starts PostgreSQL, Redis, MinIO, a one-shot MinIO bucket initializer, a one-shot Alembic migration service, the API, the Celery worker, and Celery Beat scheduler. It does not start a frontend.
 
 Run the API process from the repository root:
 
@@ -117,13 +117,31 @@ Run the API process from the repository root:
 uv run uvicorn workflowforge_api.main:app --host 127.0.0.1 --port 8000
 ```
 
+Run the worker process from the repository root:
+
+```powershell
+uv run celery -A workflowforge_worker.main:app worker --loglevel=INFO
+```
+
+Run the scheduler process from the repository root:
+
+```powershell
+uv run celery -A workflowforge_scheduler.main:app beat --loglevel=INFO
+```
+
+Run the safe diagnostic task against a running worker:
+
+```powershell
+uv run python scripts/run_diagnostic_task.py --message hello --timeout 10
+```
+
 API health endpoints:
 
 - `GET /health/live` confirms the API process is alive and does not check external dependencies.
 - `GET /health/ready` confirms FastAPI startup completed for the current process instance.
-- `GET /health/dependencies` checks PostgreSQL, Redis, and object storage concurrently.
+- `GET /health/dependencies` checks PostgreSQL, Redis, object storage, worker availability, and scheduler heartbeat visibility concurrently.
 
-Dependency health returns `200` only when all required dependencies are healthy and `503` when one or more are unhealthy. Responses include sanitized details and bounded latency measurements. Worker health is intentionally omitted until the worker process exists. API documentation is available at `/docs`, `/redoc`, and `/openapi.json` unless disabled with `WORKFLOWFORGE_API_DOCS_ENABLED=false`. Responses include `X-Correlation-ID` for request tracing.
+Dependency health returns `200` only when all required dependencies are healthy and `503` when one or more are unhealthy. The order is `postgresql`, `redis`, `object_storage`, `worker`, `scheduler`. Responses include sanitized details and bounded latency measurements. API readiness remains independent from worker and scheduler availability. API documentation is available at `/docs`, `/redoc`, and `/openapi.json` unless disabled with `WORKFLOWFORGE_API_DOCS_ENABLED=false`. Responses include `X-Correlation-ID` for request tracing.
 
 Default local ports are PostgreSQL `5432`, Redis `6379`, MinIO API `9000`, MinIO console `9001`, and API `8000`. Compose services use internal hostnames such as `postgres`, `redis`, and `minio`; host-side tools should use `localhost` with the configured host ports.
 

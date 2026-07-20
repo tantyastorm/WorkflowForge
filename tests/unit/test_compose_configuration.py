@@ -13,7 +13,7 @@ def _compose_text() -> str:
 
 @pytest.mark.parametrize(
     "service",
-    ["postgres", "redis", "minio", "minio-init", "migrate", "api"],
+    ["postgres", "redis", "minio", "minio-init", "migrate", "api", "worker", "scheduler"],
 )
 def test_required_compose_services_exist(service: str) -> None:
     assert f"  {service}:" in _compose_text()
@@ -44,3 +44,15 @@ def test_health_checks_are_configured() -> None:
     assert "redis-cli ping | grep PONG" in compose
     assert 'mc", "ready", "local"' in compose
     assert "/health/ready" in compose
+    assert "celery -A workflowforge_worker.main:app inspect ping" in compose
+    assert "WORKFLOWFORGE_SCHEDULER_HEARTBEAT_KEY" in compose
+
+
+def test_worker_and_scheduler_use_backend_image_with_separate_commands() -> None:
+    compose = _compose_text()
+
+    assert "workflowforge_worker.main:app" in compose
+    assert "workflowforge_scheduler.main:app" in compose
+    assert '"worker",' in compose
+    assert '"beat",' in compose
+    assert "/tmp/workflowforge-celerybeat-schedule" in compose

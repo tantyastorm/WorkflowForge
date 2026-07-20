@@ -4,11 +4,13 @@ import pytest
 from pydantic import SecretStr, ValidationError
 from workflowforge_infrastructure.config.settings import (
     ApiSettings,
+    CelerySettings,
     Environment,
     LogFormat,
     LogLevel,
     RedisSettings,
     S3Settings,
+    SchedulerSettings,
     Settings,
 )
 
@@ -45,6 +47,17 @@ def test_settings_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
     assert settings.s3.region == "us-east-1"
     assert settings.s3.use_ssl is False
     assert settings.s3.timeout_seconds == 3
+    assert settings.celery.resolved_broker_url(settings.redis) == "redis://localhost:6379/1"
+    assert settings.celery.resolved_result_backend(settings.redis) == "redis://localhost:6379/2"
+    assert settings.celery.default_queue == "workflowforge"
+    assert settings.celery.diagnostic_queue == "workflowforge.diagnostics"
+    assert settings.celery.task_time_limit_seconds == 300
+    assert settings.celery.task_soft_time_limit_seconds == 270
+    assert settings.celery.worker_concurrency == 2
+    assert settings.celery.worker_health_timeout_seconds == 3
+    assert settings.scheduler.heartbeat_interval_seconds == 30
+    assert settings.scheduler.heartbeat_ttl_seconds == 90
+    assert settings.scheduler.heartbeat_key == "workflowforge:diagnostics:scheduler:last_seen"
 
 
 def test_settings_environment_overrides(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -198,6 +211,83 @@ def test_s3_secret_key_repr_is_safe() -> None:
 def test_s3_settings_reject_invalid_values(field: str, value: object) -> None:
     with pytest.raises(ValidationError):
         S3Settings.model_validate({field: value})
+
+
+def test_celery_settings_environment_overrides(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("WORKFLOWFORGE_REDIS_HOST", "redis")
+    monkeypatch.setenv("WORKFLOWFORGE_REDIS_PORT", "6380")
+    monkeypatch.setenv("WORKFLOWFORGE_CELERY_BROKER_DATABASE", "4")
+    monkeypatch.setenv("WORKFLOWFORGE_CELERY_RESULT_BACKEND_DATABASE", "5")
+    monkeypatch.setenv("WORKFLOWFORGE_CELERY_DEFAULT_QUEUE", "default.queue")
+    monkeypatch.setenv("WORKFLOWFORGE_CELERY_DIAGNOSTIC_QUEUE", "diagnostic.queue")
+    monkeypatch.setenv("WORKFLOWFORGE_CELERY_TASK_TIME_LIMIT_SECONDS", "60")
+    monkeypatch.setenv("WORKFLOWFORGE_CELERY_TASK_SOFT_TIME_LIMIT_SECONDS", "45")
+    monkeypatch.setenv("WORKFLOWFORGE_CELERY_WORKER_CONCURRENCY", "3")
+    monkeypatch.setenv("WORKFLOWFORGE_CELERY_WORKER_HEALTH_TIMEOUT_SECONDS", "1.5")
+
+    settings = Settings()
+
+    assert settings.celery.resolved_broker_url(settings.redis) == "redis://redis:6380/4"
+    assert settings.celery.resolved_result_backend(settings.redis) == "redis://redis:6380/5"
+    assert settings.celery.default_queue == "default.queue"
+    assert settings.celery.diagnostic_queue == "diagnostic.queue"
+    assert settings.celery.task_time_limit_seconds == 60
+    assert settings.celery.task_soft_time_limit_seconds == 45
+    assert settings.celery.worker_concurrency == 3
+    assert settings.celery.worker_health_timeout_seconds == 1.5
+
+
+def test_celery_explicit_urls_are_supported_and_redacted() -> None:
+    settings = CelerySettings(
+        broker_url=SecretStr("redis://:secret@redis:6379/1"),
+        result_backend=SecretStr("redis://:secret@redis:6379/2"),
+    )
+    redis_settings = RedisSettings(host="ignored")
+
+    assert settings.resolved_broker_url(redis_settings) == "redis://:secret@redis:6379/1"
+    assert settings.resolved_result_backend(redis_settings) == "redis://:secret@redis:6379/2"
+    assert "secret" not in repr(settings)
+    assert "**********" in repr(settings)
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("broker_url", "http://redis:6379/1"),
+        ("result_backend", "postgresql://db"),
+        ("default_queue", "bad queue"),
+        ("diagnostic_queue", "bad/queue"),
+        ("task_time_limit_seconds", 0),
+        ("task_soft_time_limit_seconds", 0),
+        ("worker_concurrency", 0),
+        ("worker_health_timeout_seconds", 0),
+    ],
+)
+def test_celery_settings_reject_invalid_values(field: str, value: object) -> None:
+    with pytest.raises(ValidationError):
+        CelerySettings.model_validate({field: value})
+
+
+def test_celery_soft_limit_must_be_lower_than_hard_limit() -> None:
+    with pytest.raises(ValidationError):
+        CelerySettings(task_time_limit_seconds=30, task_soft_time_limit_seconds=30)
+
+
+def test_scheduler_settings_environment_overrides(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("WORKFLOWFORGE_SCHEDULER_HEARTBEAT_INTERVAL_SECONDS", "5")
+    monkeypatch.setenv("WORKFLOWFORGE_SCHEDULER_HEARTBEAT_TTL_SECONDS", "20")
+    monkeypatch.setenv("WORKFLOWFORGE_SCHEDULER_HEARTBEAT_KEY", "workflowforge:test:last_seen")
+
+    settings = Settings()
+
+    assert settings.scheduler.heartbeat_interval_seconds == 5
+    assert settings.scheduler.heartbeat_ttl_seconds == 20
+    assert settings.scheduler.heartbeat_key == "workflowforge:test:last_seen"
+
+
+def test_scheduler_heartbeat_ttl_must_exceed_interval() -> None:
+    with pytest.raises(ValidationError):
+        SchedulerSettings(heartbeat_interval_seconds=10, heartbeat_ttl_seconds=10)
 
 
 def test_settings_reject_invalid_environment(monkeypatch: pytest.MonkeyPatch) -> None:

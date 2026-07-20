@@ -5,7 +5,7 @@ from functools import lru_cache
 from typing import Annotated
 from urllib.parse import urlparse
 
-from pydantic import Field, SecretStr, field_validator
+from pydantic import Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 from sqlalchemy.engine import URL
 
@@ -142,6 +142,104 @@ class S3Settings(BaseSettings):
         return value
 
 
+class CelerySettings(BaseSettings):
+    """Validated Celery task transport settings."""
+
+    model_config = SettingsConfigDict(extra="forbid", validate_default=True)
+
+    broker_url: SecretStr | None = None
+    result_backend: SecretStr | None = None
+    broker_database: int = Field(default=1, ge=0)
+    result_backend_database: int = Field(default=2, ge=0)
+    default_queue: str = Field(default="workflowforge", min_length=1)
+    diagnostic_queue: str = Field(default="workflowforge.diagnostics", min_length=1)
+    task_time_limit_seconds: int = Field(default=300, gt=0)
+    task_soft_time_limit_seconds: int = Field(default=270, gt=0)
+    worker_concurrency: int = Field(default=2, gt=0)
+    worker_health_timeout_seconds: float = Field(default=3.0, gt=0)
+
+    @field_validator("broker_url", "result_backend", mode="before")
+    @classmethod
+    def empty_url_is_none(cls, value: object) -> object:
+        """Treat empty optional URL overrides as unset."""
+
+        if value == "":
+            return None
+        return value
+
+    @field_validator("broker_url", "result_backend")
+    @classmethod
+    def validate_redis_url(cls, value: SecretStr | None) -> SecretStr | None:
+        """Require Redis URLs when explicit Celery URL overrides are used."""
+
+        if value is None:
+            return None
+        parsed = urlparse(value.get_secret_value())
+        if parsed.scheme not in {"redis", "rediss"} or not parsed.netloc:
+            msg = "Celery broker and result backend URLs must be Redis URLs"
+            raise ValueError(msg)
+        return value
+
+    @field_validator("default_queue", "diagnostic_queue")
+    @classmethod
+    def validate_queue_name(cls, value: str) -> str:
+        """Require simple portable Celery queue names."""
+
+        allowed = set("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789._-")
+        if any(character not in allowed for character in value):
+            msg = (
+                "Celery queue names may contain only letters, numbers, dots, "
+                "underscores, and hyphens"
+            )
+            raise ValueError(msg)
+        return value
+
+    @model_validator(mode="after")
+    def validate_time_limits(self) -> "CelerySettings":
+        """Require the soft time limit to be lower than the hard time limit."""
+
+        if self.task_soft_time_limit_seconds >= self.task_time_limit_seconds:
+            msg = "Celery soft task time limit must be lower than the hard time limit"
+            raise ValueError(msg)
+        return self
+
+    def resolved_broker_url(self, redis: RedisSettings) -> str:
+        """Return the configured Celery broker URL."""
+
+        if self.broker_url is not None:
+            return self.broker_url.get_secret_value()
+        return _redis_url(redis, db=self.broker_database)
+
+    def resolved_result_backend(self, redis: RedisSettings) -> str:
+        """Return the configured Celery result backend URL."""
+
+        if self.result_backend is not None:
+            return self.result_backend.get_secret_value()
+        return _redis_url(redis, db=self.result_backend_database)
+
+
+class SchedulerSettings(BaseSettings):
+    """Validated scheduler process settings."""
+
+    model_config = SettingsConfigDict(extra="forbid", validate_default=True)
+
+    heartbeat_interval_seconds: int = Field(default=30, gt=0)
+    heartbeat_ttl_seconds: int = Field(default=90, gt=0)
+    heartbeat_key: str = Field(
+        default="workflowforge:diagnostics:scheduler:last_seen",
+        min_length=1,
+    )
+
+    @model_validator(mode="after")
+    def validate_heartbeat_policy(self) -> "SchedulerSettings":
+        """Require heartbeat TTL to outlive the scheduler interval."""
+
+        if self.heartbeat_ttl_seconds <= self.heartbeat_interval_seconds:
+            msg = "Scheduler heartbeat TTL must be greater than the heartbeat interval"
+            raise ValueError(msg)
+        return self
+
+
 class Settings(BaseSettings):
     """Validated process settings shared by backend packages."""
 
@@ -164,6 +262,8 @@ class Settings(BaseSettings):
     database: DatabaseSettings = Field(default_factory=lambda: DatabaseSettings())
     redis: RedisSettings = Field(default_factory=lambda: RedisSettings())
     s3: S3Settings = Field(default_factory=lambda: S3Settings())
+    celery: CelerySettings = Field(default_factory=lambda: CelerySettings())
+    scheduler: SchedulerSettings = Field(default_factory=lambda: SchedulerSettings())
 
     @field_validator("cors_origins", mode="before")
     @classmethod
@@ -194,3 +294,9 @@ def get_settings() -> Settings:
     """Return cached settings for process startup code."""
 
     return Settings()
+
+
+def _redis_url(settings: RedisSettings, *, db: int) -> str:
+    scheme = "rediss" if settings.ssl else "redis"
+    password = f":{settings.password.get_secret_value()}@" if settings.password is not None else ""
+    return f"{scheme}://{password}{settings.host}:{settings.port}/{db}"

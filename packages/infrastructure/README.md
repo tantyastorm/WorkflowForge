@@ -27,7 +27,24 @@ Infrastructure provides concrete dependency health adapters for:
 - PostgreSQL with an async SQLAlchemy `SELECT 1` check.
 - Redis with an async `PING` check.
 - S3-compatible object storage with a bucket `head_bucket` check.
+- Celery worker availability with a bounded inspect ping.
+- Scheduler visibility with a Redis heartbeat timestamp.
 
 Adapters return transport-neutral health contracts, measure non-negative latency, use bounded timeouts, and sanitize failures. They do not expose credentials, raw connection URLs, driver exception messages, or stack traces.
 
-Redis and S3 clients are created through explicit factories. No database, Redis, or S3 client is created at module import time. Redis remains transient coordination infrastructure, not durable workflow state. S3 health checks verify bucket reachability and do not write objects.
+Redis and S3 clients are created through explicit factories. No database, Redis, S3, or Celery broker client is created at module import time. Redis remains transient coordination infrastructure, not durable workflow state. S3 health checks verify bucket reachability and do not write objects.
+
+## Celery Task Infrastructure
+
+`workflowforge_infrastructure.tasks` owns the Celery app factory, explicit diagnostic task registration, periodic schedule registration, and worker/scheduler health checks.
+
+The Celery app is named `workflowforge`, uses Redis as broker and result backend, accepts JSON only, serializes tasks and results as JSON, enables UTC with timezone `UTC`, disables late acknowledgements for the current diagnostic tasks, uses a prefetch multiplier of `1`, tracks task start state, applies bounded hard and soft task time limits, and registers explicit default and diagnostic queues.
+
+Celery broker and result backend URLs are derived from the typed Redis settings by default, using separate Redis databases for broker and diagnostic result metadata. Explicit URL overrides are supported and stored as secrets so credentials are not exposed through reprs.
+
+Registered Phase 1 tasks:
+
+- `system.diagnostics.echo`
+- `system.diagnostics.scheduler_heartbeat`
+
+No business tasks are registered in this foundation.

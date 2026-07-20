@@ -12,6 +12,11 @@ from workflowforge_infrastructure.database import (
 from workflowforge_infrastructure.logging import configure_logging
 from workflowforge_infrastructure.redis import RedisHealthCheck, create_redis_client
 from workflowforge_infrastructure.storage import S3HealthCheck, create_s3_client
+from workflowforge_infrastructure.tasks import (
+    SchedulerHealthCheck,
+    WorkerHealthCheck,
+    create_celery_app,
+)
 
 from workflowforge_api import __version__
 from workflowforge_api.dependencies import (
@@ -50,9 +55,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     database_engine = create_async_database_engine(resolved_settings.database)
     redis_client = create_redis_client(resolved_settings.redis)
     s3_client = create_s3_client(resolved_settings.s3)
+    celery_app = create_celery_app(resolved_settings)
     app.state.database_engine = database_engine
     app.state.redis_client = redis_client
     app.state.s3_client = s3_client
+    app.state.celery_app = celery_app
     set_dependency_health_service(
         app.state,
         DependencyHealthService(
@@ -63,6 +70,15 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 ),
                 RedisHealthCheck(redis_client),
                 S3HealthCheck(s3_client, resolved_settings.s3),
+                WorkerHealthCheck(
+                    celery_app,
+                    timeout_seconds=resolved_settings.celery.worker_health_timeout_seconds,
+                ),
+                SchedulerHealthCheck(
+                    redis_client,
+                    resolved_settings.scheduler,
+                    timeout_seconds=resolved_settings.redis.socket_timeout_seconds,
+                ),
             ),
             timeout_seconds=DEFAULT_DEPENDENCY_TIMEOUT_SECONDS,
         ),

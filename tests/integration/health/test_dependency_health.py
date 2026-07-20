@@ -90,4 +90,10 @@ def test_dependency_health_endpoint_succeeds_against_compose_api() -> None:
     assert status == 200
     assert correlation_id == "integration-health"
     assert body["status"] == "healthy"
-    assert list(body["dependencies"]) == ["postgresql", "redis", "object_storage"]
+    assert list(body["dependencies"]) == [
+        "postgresql",
+        "redis",
+        "object_storage",
+        "worker",
+        "scheduler",
+    ]
