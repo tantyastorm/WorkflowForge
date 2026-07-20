@@ -4,9 +4,9 @@ WorkflowForge is an open-source operations platform for building, evaluating, an
 
 ## Project Status
 
-WorkflowForge is in early Phase 1 foundation work. The repository layout, contribution standards, architecture boundaries, Python workspace, database migration foundation, local infrastructure, API health foundation, and Celery worker/scheduler process foundations are in place.
+WorkflowForge is in early Phase 1 foundation work. The repository layout, contribution standards, architecture boundaries, Python workspace, database migration foundation, local infrastructure, API health foundation, Celery worker/scheduler process foundations, and React frontend foundation are in place.
 
-This stage does not implement frontend tooling, authentication, workflow execution features, business worker tasks, scheduler workflow triggers, or business object-storage APIs.
+This stage does not implement authentication, workflow execution features, business worker tasks, scheduler workflow triggers, frontend system-status integration, or business object-storage APIs.
 
 ## Planned Capabilities
 
@@ -154,6 +154,35 @@ docker compose down
 Use `docker compose down -v` only for a destructive reset; it deletes local PostgreSQL, Redis, and MinIO development data.
 
 Workspace distributions are `workflowforge-domain`, `workflowforge-contracts`, `workflowforge-application`, `workflowforge-infrastructure`, `workflowforge-api`, `workflowforge-worker`, and `workflowforge-scheduler`.
+
+## Frontend Workspace
+
+The frontend uses React, TypeScript, Vite, React Router, TanStack Query, Zod, Vitest, Testing Library, ESLint, Prettier, and pnpm. Use Node.js 24 LTS or another current Node LTS compatible with Vite.
+
+Install and run from the repository root:
+
+```powershell
+corepack pnpm --dir apps/web install
+corepack pnpm --dir apps/web dev --host 127.0.0.1
+```
+
+The frontend environment file is `apps/web/.env.example`; copy it to an untracked local `.env` when needed. The required public setting is:
+
+```dotenv
+VITE_API_BASE_URL=http://localhost:8000
+```
+
+Frontend quality checks:
+
+```powershell
+corepack pnpm --dir apps/web format:check
+corepack pnpm --dir apps/web lint
+corepack pnpm --dir apps/web typecheck
+corepack pnpm --dir apps/web test:run
+corepack pnpm --dir apps/web build
+```
+
+The current frontend is a route-ready application shell only. Real system-status integration comes next.
 
 ## Contributing
 

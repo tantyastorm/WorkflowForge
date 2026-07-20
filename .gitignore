@@ -221,6 +221,12 @@ __marimo__/
 
 # Node / frontend
 node_modules/
+apps/web/node_modules/
+apps/web/dist/
+apps/web/coverage/
+apps/web/.vite/
+!apps/web/src/lib/
+!apps/web/src/lib/**
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
