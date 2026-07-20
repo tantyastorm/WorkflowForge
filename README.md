@@ -4,9 +4,9 @@ WorkflowForge is an open-source operations platform for building, evaluating, an
 
 ## Project Status
 
-WorkflowForge is in early Phase 1 repository foundation work. The project is defining its repository layout, contribution standards, and architecture boundaries before runtime code is introduced.
+WorkflowForge is in early Phase 1 foundation work. The repository layout, contribution standards, architecture boundaries, Python workspace, database migration foundation, and minimal API process foundation are in place.
 
-This commit does not implement runtime setup, application code, package configuration, Docker services, database migrations, frontend tooling, or workflow execution features.
+This stage does not implement Docker services, frontend tooling, authentication, workflow execution features, background workers, scheduler behavior, Redis, or object storage.
 
 ## Planned Capabilities
 
@@ -63,7 +63,7 @@ scripts/               Developer and automation scripts.
 
 ## Phase 1 Scope
 
-Current Phase 1 work is limited to repository structure, documentation, contribution practices, and architecture boundary definitions. Runtime implementation will be introduced in later focused commits.
+Current Phase 1 work is limited to focused foundations. The API process currently exposes process health endpoints only; product routes, authentication, dependency health aggregation, background execution, and local Docker infrastructure will be introduced in later commits.
 
 ## Documentation
 
@@ -101,6 +101,19 @@ uv run alembic downgrade base
 ```
 
 Database integration tests require a real PostgreSQL database configured through `WORKFLOWFORGE_DATABASE_*` environment variables.
+
+Run the API process from the repository root:
+
+```powershell
+uv run uvicorn workflowforge_api.main:app --host 127.0.0.1 --port 8000
+```
+
+API health endpoints:
+
+- `GET /health/live` confirms the API process is alive and does not check external dependencies.
+- `GET /health/ready` confirms FastAPI startup completed for the current process instance.
+
+Dependency health is intentionally not exposed yet. API documentation is available at `/docs`, `/redoc`, and `/openapi.json` unless disabled with `WORKFLOWFORGE_API_DOCS_ENABLED=false`. Responses include `X-Correlation-ID` for request tracing.
 
 Workspace distributions are `workflowforge-domain`, `workflowforge-contracts`, `workflowforge-application`, `workflowforge-infrastructure`, `workflowforge-api`, `workflowforge-worker`, and `workflowforge-scheduler`.
 

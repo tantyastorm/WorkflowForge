@@ -71,7 +71,7 @@ def _add_service_context(settings: Settings) -> Processor:
         _method_name: str,
         event_dict: structlog.types.EventDict,
     ) -> structlog.types.EventDict:
-        event_dict["service"] = settings.app_name
+        event_dict.setdefault("service", settings.app_name)
         event_dict["environment"] = settings.environment.value
         return event_dict
 

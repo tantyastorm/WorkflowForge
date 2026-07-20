@@ -2,9 +2,10 @@
 
 from enum import StrEnum
 from functools import lru_cache
+from typing import Annotated
 
-from pydantic import Field, SecretStr
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic import Field, SecretStr, field_validator
+from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 from sqlalchemy.engine import URL
 
 
@@ -69,6 +70,30 @@ class DatabaseSettings(BaseSettings):
         )
 
 
+class ApiSettings(BaseSettings):
+    """Validated API process settings."""
+
+    model_config = SettingsConfigDict(extra="forbid", validate_default=True)
+
+    host: str = Field(default="0.0.0.0", min_length=1)
+    port: int = Field(default=8000, ge=1, le=65535)
+    v1_prefix: str = "/api/v1"
+    docs_enabled: bool = True
+
+    @field_validator("v1_prefix")
+    @classmethod
+    def validate_v1_prefix(cls, value: str) -> str:
+        """Require a normalized absolute API prefix."""
+
+        if not value.startswith("/"):
+            msg = "API prefix must begin with /"
+            raise ValueError(msg)
+        if value.endswith("/"):
+            msg = "API prefix must not end with /"
+            raise ValueError(msg)
+        return value
+
+
 class Settings(BaseSettings):
     """Validated process settings shared by backend packages."""
 
@@ -86,7 +111,32 @@ class Settings(BaseSettings):
     debug: bool = True
     log_level: LogLevel = LogLevel.INFO
     log_format: LogFormat = LogFormat.CONSOLE
+    api: ApiSettings = Field(default_factory=lambda: ApiSettings())
+    cors_origins: Annotated[tuple[str, ...], NoDecode] = ("http://localhost:5173",)
     database: DatabaseSettings = Field(default_factory=lambda: DatabaseSettings())
+
+    @field_validator("cors_origins", mode="before")
+    @classmethod
+    def parse_cors_origins(cls, value: object) -> object:
+        """Parse comma-separated CORS origins from environment variables."""
+
+        if isinstance(value, str):
+            return tuple(origin.strip() for origin in value.split(",") if origin.strip())
+        return value
+
+    @field_validator("cors_origins")
+    @classmethod
+    def validate_cors_origins(cls, value: tuple[str, ...]) -> tuple[str, ...]:
+        """Require explicit, printable CORS origins."""
+
+        for origin in value:
+            if origin == "*":
+                msg = "CORS origins must be explicit"
+                raise ValueError(msg)
+            if any(character.isspace() or ord(character) < 32 for character in origin):
+                msg = "CORS origins must not contain whitespace or control characters"
+                raise ValueError(msg)
+        return value
 
 
 @lru_cache

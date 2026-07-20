@@ -1,6 +1,7 @@
 """Configuration helpers for WorkflowForge infrastructure."""
 
 from workflowforge_infrastructure.config.settings import (
+    ApiSettings,
     DatabaseSettings,
     Environment,
     LogFormat,
@@ -10,6 +11,7 @@ from workflowforge_infrastructure.config.settings import (
 )
 
 __all__ = [
+    "ApiSettings",
     "DatabaseSettings",
     "Environment",
     "LogFormat",
