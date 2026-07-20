@@ -1,17 +1,8 @@
-"""Framework-independent WorkflowForge domain package."""
+"""Public identity and tenancy domain API."""
 
-from workflowforge_domain.documents import (
-    ContentHash,
-    Document,
-    DocumentError,
-    DocumentId,
-    DocumentStatus,
-    InvalidDocumentTransitionError,
-    StorageObjectKey,
-)
-from workflowforge_domain.errors import DomainError
-from workflowforge_domain.identity import (
-    EmailAddress,
+from workflowforge_domain.identity.entities import Membership, Organization, User
+from workflowforge_domain.identity.enums import MembershipStatus, Role
+from workflowforge_domain.identity.errors import (
     IdentityDomainError,
     InvalidDisplayName,
     InvalidEmailAddress,
@@ -21,27 +12,20 @@ from workflowforge_domain.identity import (
     InvalidOrganizationSlug,
     InvalidTimestamp,
     LastActiveOwnerViolation,
-    Membership,
     MembershipAlreadyRemoved,
+)
+from workflowforge_domain.identity.policies import (
     MembershipMutation,
     MembershipPolicy,
-    MembershipStatus,
-    Organization,
+)
+from workflowforge_domain.identity.value_objects import (
+    EmailAddress,
     OrganizationSlug,
-    Role,
-    User,
 )
 
 __all__ = [
-    "ContentHash",
-    "Document",
-    "DocumentError",
-    "DocumentId",
-    "DocumentStatus",
-    "DomainError",
     "EmailAddress",
     "IdentityDomainError",
-    "InvalidDocumentTransitionError",
     "InvalidDisplayName",
     "InvalidEmailAddress",
     "InvalidIdentifier",
@@ -58,9 +42,5 @@ __all__ = [
     "Organization",
     "OrganizationSlug",
     "Role",
-    "StorageObjectKey",
     "User",
-    "__version__",
 ]
-
-__version__ = "0.1.0a1"

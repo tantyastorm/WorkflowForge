@@ -23,3 +23,20 @@ Current concepts:
 - `Document`: immutable metadata aggregate with original filename, media type, byte size, content hash, object key, lifecycle status, and timestamps.
 
 The current storage key format is `documents/sha256/<first-two-hex>/<next-two-hex>/<sha256>`. The original filename is kept only as a normalized user-facing display value and is not used as the object key.
+
+## Identity And Tenancy
+
+The identity and tenancy domain foundation defines framework-independent users, organizations, memberships, roles, membership statuses, identity value objects, lifecycle errors, and pure membership policies.
+
+Current concepts:
+
+- `EmailAddress`: preserves display email and compares by `email.strip().casefold()` identity.
+- `OrganizationSlug`: explicit lowercase public organization slug.
+- `Role`: `owner`, `admin`, `operator`, `reviewer`, and `auditor`.
+- `MembershipStatus`: `invited`, `active`, `suspended`, and `removed`.
+- `User`: identity entity with email, display name, active state, and lifecycle timestamps.
+- `Organization`: tenant entity with name, immutable slug, active state, and lifecycle timestamps.
+- `Membership`: user-to-organization relationship with explicit invite, activation, suspension, reactivation, removal, and role-change transitions.
+- `MembershipPolicy`: pure policy checks including the last-active-owner invariant.
+
+This package does not define permission resolution, tenant context, repositories, authentication sessions, password credentials, API schemas, SQLAlchemy mappings, or audit persistence.
