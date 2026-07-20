@@ -10,3 +10,10 @@ Run the current backend checks with:
 uv run pytest
 uv run pytest --cov --cov-report=term-missing
 ```
+
+Database integration tests require real PostgreSQL settings:
+
+```powershell
+uv run pytest -m "not integration"
+uv run pytest -m integration
+```

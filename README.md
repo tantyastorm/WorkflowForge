@@ -92,6 +92,16 @@ uv run pytest
 uv run pytest --cov --cov-report=term-missing
 ```
 
+Database migration commands:
+
+```powershell
+uv run alembic upgrade head
+uv run alembic current
+uv run alembic downgrade base
+```
+
+Database integration tests require a real PostgreSQL database configured through `WORKFLOWFORGE_DATABASE_*` environment variables.
+
 Workspace distributions are `workflowforge-domain`, `workflowforge-contracts`, `workflowforge-application`, `workflowforge-infrastructure`, `workflowforge-api`, `workflowforge-worker`, and `workflowforge-scheduler`.
 
 ## Contributing

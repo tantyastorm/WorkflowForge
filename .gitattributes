@@ -6,10 +6,12 @@
 py.typed text eol=lf
 *.md text eol=lf
 *.toml text eol=lf
+*.ini text eol=lf
 *.lock text eol=lf
 *.yml text eol=lf
 *.yaml text eol=lf
 *.json text eol=lf
+*.mako text eol=lf
 *.sh text eol=lf
 *.dockerignore text eol=lf
 .env.example text eol=lf
