@@ -10,7 +10,7 @@ from workflowforge_infrastructure.database.errors import (
     DatabaseError,
     DatabaseUnavailableError,
 )
-from workflowforge_infrastructure.database.health import check_database_health
+from workflowforge_infrastructure.database.health import DatabaseHealthCheck, check_database_health
 from workflowforge_infrastructure.database.session import (
     async_session_scope,
     create_async_session_factory,
@@ -19,6 +19,7 @@ from workflowforge_infrastructure.database.session import (
 __all__ = [
     "Base",
     "DatabaseError",
+    "DatabaseHealthCheck",
     "DatabaseUnavailableError",
     "async_session_scope",
     "check_database_health",

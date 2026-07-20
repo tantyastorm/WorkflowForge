@@ -2,14 +2,20 @@
 
 from workflowforge_contracts.health import (
     DependencyHealth,
+    DependencyHealthReport,
+    DependencyHealthResult,
     DependencyState,
+    DependencyStatus,
     HealthState,
     SystemHealth,
 )
 
 __all__ = [
     "DependencyHealth",
+    "DependencyHealthReport",
+    "DependencyHealthResult",
     "DependencyState",
+    "DependencyStatus",
     "HealthState",
     "SystemHealth",
     "__version__",

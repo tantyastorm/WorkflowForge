@@ -2,11 +2,23 @@
 
 from fastapi import APIRouter, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from workflowforge_application.health import DependencyHealthService
+from workflowforge_application.health.service import DEFAULT_DEPENDENCY_TIMEOUT_SECONDS
 from workflowforge_infrastructure.config import Settings, get_settings
+from workflowforge_infrastructure.database import (
+    DatabaseHealthCheck,
+    create_async_database_engine,
+)
 from workflowforge_infrastructure.logging import configure_logging
+from workflowforge_infrastructure.redis import RedisHealthCheck, create_redis_client
+from workflowforge_infrastructure.storage import S3HealthCheck, create_s3_client
 
 from workflowforge_api import __version__
-from workflowforge_api.dependencies import ReadinessState, set_readiness_state
+from workflowforge_api.dependencies import (
+    ReadinessState,
+    set_dependency_health_service,
+    set_readiness_state,
+)
 from workflowforge_api.exception_handlers import register_exception_handlers
 from workflowforge_api.lifespan import lifespan
 from workflowforge_api.middleware import RequestContextMiddleware
@@ -35,6 +47,26 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.settings = resolved_settings
     app.state.api_v1_prefix = resolved_settings.api.v1_prefix
     set_readiness_state(app.state, ReadinessState())
+    database_engine = create_async_database_engine(resolved_settings.database)
+    redis_client = create_redis_client(resolved_settings.redis)
+    s3_client = create_s3_client(resolved_settings.s3)
+    app.state.database_engine = database_engine
+    app.state.redis_client = redis_client
+    app.state.s3_client = s3_client
+    set_dependency_health_service(
+        app.state,
+        DependencyHealthService(
+            (
+                DatabaseHealthCheck(
+                    database_engine,
+                    timeout_seconds=DEFAULT_DEPENDENCY_TIMEOUT_SECONDS,
+                ),
+                RedisHealthCheck(redis_client),
+                S3HealthCheck(s3_client, resolved_settings.s3),
+            ),
+            timeout_seconds=DEFAULT_DEPENDENCY_TIMEOUT_SECONDS,
+        ),
+    )
 
     app.add_middleware(
         RequestContextMiddleware,

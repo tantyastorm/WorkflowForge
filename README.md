@@ -4,9 +4,9 @@ WorkflowForge is an open-source operations platform for building, evaluating, an
 
 ## Project Status
 
-WorkflowForge is in early Phase 1 foundation work. The repository layout, contribution standards, architecture boundaries, Python workspace, database migration foundation, and minimal API process foundation are in place.
+WorkflowForge is in early Phase 1 foundation work. The repository layout, contribution standards, architecture boundaries, Python workspace, database migration foundation, local infrastructure, and API health foundation are in place.
 
-This stage does not implement Docker services, frontend tooling, authentication, workflow execution features, background workers, scheduler behavior, Redis, or object storage.
+This stage does not implement frontend tooling, authentication, workflow execution features, background workers, scheduler behavior, Celery tasks, or business object-storage APIs.
 
 ## Planned Capabilities
 
@@ -63,7 +63,7 @@ scripts/               Developer and automation scripts.
 
 ## Phase 1 Scope
 
-Current Phase 1 work is limited to focused foundations. The API process currently exposes process health endpoints only; product routes, authentication, dependency health aggregation, background execution, and local Docker infrastructure will be introduced in later commits.
+Current Phase 1 work is limited to focused foundations. The API process currently exposes health endpoints only; product routes, authentication, background execution, and frontend runtime will be introduced in later commits.
 
 ## Documentation
 
@@ -109,7 +109,7 @@ Copy-Item .env.example .env
 docker compose up --build
 ```
 
-This starts PostgreSQL, Redis, MinIO, a one-shot MinIO bucket initializer, a one-shot Alembic migration service, and the API. It does not start workers, a scheduler, a frontend, Celery, or dependency-health aggregation.
+This starts PostgreSQL, Redis, MinIO, a one-shot MinIO bucket initializer, a one-shot Alembic migration service, and the API. It does not start workers, a scheduler, a frontend, or Celery.
 
 Run the API process from the repository root:
 
@@ -121,8 +121,9 @@ API health endpoints:
 
 - `GET /health/live` confirms the API process is alive and does not check external dependencies.
 - `GET /health/ready` confirms FastAPI startup completed for the current process instance.
+- `GET /health/dependencies` checks PostgreSQL, Redis, and object storage concurrently.
 
-Dependency health is intentionally not exposed yet. API documentation is available at `/docs`, `/redoc`, and `/openapi.json` unless disabled with `WORKFLOWFORGE_API_DOCS_ENABLED=false`. Responses include `X-Correlation-ID` for request tracing.
+Dependency health returns `200` only when all required dependencies are healthy and `503` when one or more are unhealthy. Responses include sanitized details and bounded latency measurements. Worker health is intentionally omitted until the worker process exists. API documentation is available at `/docs`, `/redoc`, and `/openapi.json` unless disabled with `WORKFLOWFORGE_API_DOCS_ENABLED=false`. Responses include `X-Correlation-ID` for request tracing.
 
 Default local ports are PostgreSQL `5432`, Redis `6379`, MinIO API `9000`, MinIO console `9001`, and API `8000`. Compose services use internal hostnames such as `postgres`, `redis`, and `minio`; host-side tools should use `localhost` with the configured host ports.
 

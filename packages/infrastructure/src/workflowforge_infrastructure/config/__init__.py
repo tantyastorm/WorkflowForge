@@ -6,6 +6,8 @@ from workflowforge_infrastructure.config.settings import (
     Environment,
     LogFormat,
     LogLevel,
+    RedisSettings,
+    S3Settings,
     Settings,
     get_settings,
 )
@@ -16,6 +18,8 @@ __all__ = [
     "Environment",
     "LogFormat",
     "LogLevel",
+    "RedisSettings",
+    "S3Settings",
     "Settings",
     "get_settings",
 ]

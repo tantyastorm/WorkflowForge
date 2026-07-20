@@ -3,6 +3,7 @@
 from enum import StrEnum
 from functools import lru_cache
 from typing import Annotated
+from urllib.parse import urlparse
 
 from pydantic import Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
@@ -94,6 +95,53 @@ class ApiSettings(BaseSettings):
         return value
 
 
+class RedisSettings(BaseSettings):
+    """Validated Redis infrastructure settings."""
+
+    model_config = SettingsConfigDict(extra="forbid", validate_default=True)
+
+    host: str = Field(default="localhost", min_length=1)
+    port: int = Field(default=6379, ge=1, le=65535)
+    db: int = Field(default=0, ge=0)
+    password: SecretStr | None = None
+    ssl: bool = False
+    socket_timeout_seconds: float = Field(default=3.0, gt=0)
+
+    @field_validator("password", mode="before")
+    @classmethod
+    def empty_password_is_none(cls, value: object) -> object:
+        """Treat empty Redis passwords as unset."""
+
+        if value == "":
+            return None
+        return value
+
+
+class S3Settings(BaseSettings):
+    """Validated S3-compatible object storage settings."""
+
+    model_config = SettingsConfigDict(extra="forbid", validate_default=True)
+
+    endpoint_url: str = "http://localhost:9000"
+    access_key: str = Field(default="workflowforge", min_length=1)
+    secret_key: SecretStr = Field(default=SecretStr("workflowforge_dev_secret"))
+    bucket: str = Field(default="workflowforge", min_length=1)
+    region: str = Field(default="us-east-1", min_length=1)
+    use_ssl: bool = False
+    timeout_seconds: float = Field(default=3.0, gt=0)
+
+    @field_validator("endpoint_url")
+    @classmethod
+    def validate_endpoint_url(cls, value: str) -> str:
+        """Require an HTTP(S) endpoint URL."""
+
+        parsed = urlparse(value)
+        if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+            msg = "S3 endpoint URL must be an absolute HTTP(S) URL"
+            raise ValueError(msg)
+        return value
+
+
 class Settings(BaseSettings):
     """Validated process settings shared by backend packages."""
 
@@ -114,6 +162,8 @@ class Settings(BaseSettings):
     api: ApiSettings = Field(default_factory=lambda: ApiSettings())
     cors_origins: Annotated[tuple[str, ...], NoDecode] = ("http://localhost:5173",)
     database: DatabaseSettings = Field(default_factory=lambda: DatabaseSettings())
+    redis: RedisSettings = Field(default_factory=lambda: RedisSettings())
+    s3: S3Settings = Field(default_factory=lambda: S3Settings())
 
     @field_validator("cors_origins", mode="before")
     @classmethod

@@ -5,6 +5,7 @@ from typing import cast
 
 from fastapi import Request
 from starlette.datastructures import State
+from workflowforge_application.health import DependencyHealthService
 
 
 @dataclass
@@ -34,3 +35,18 @@ def get_readiness_state(request: Request) -> ReadinessState:
     """Return readiness state for the current application instance."""
 
     return cast("ReadinessState", request.app.state.readiness)
+
+
+def set_dependency_health_service(
+    state: State,
+    service: DependencyHealthService,
+) -> None:
+    """Store dependency health service on the application state container."""
+
+    state.dependency_health_service = service
+
+
+def get_dependency_health_service(request: Request) -> DependencyHealthService:
+    """Return the dependency health service for the current application instance."""
+
+    return cast("DependencyHealthService", request.app.state.dependency_health_service)

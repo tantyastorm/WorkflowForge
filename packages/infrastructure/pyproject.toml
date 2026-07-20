@@ -12,6 +12,8 @@ dependencies = [
   "structlog>=25.4.0",
   "workflowforge-contracts",
   "workflowforge-domain",
+  "redis>=8.0.1",
+  "boto3>=1.43.51",
 ]
 
 [build-system]

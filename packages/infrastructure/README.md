@@ -19,3 +19,15 @@ Infrastructure owns engine, session, metadata, and health-check mechanics. Domai
 Application use cases own transaction boundaries. Session helpers do not commit implicitly; they roll back on exceptions and always close the session.
 
 Migrations are explicit operational commands. API startup must not run migrations automatically, and multiple API processes must not race to migrate.
+
+## Dependency Health Adapters
+
+Infrastructure provides concrete dependency health adapters for:
+
+- PostgreSQL with an async SQLAlchemy `SELECT 1` check.
+- Redis with an async `PING` check.
+- S3-compatible object storage with a bucket `head_bucket` check.
+
+Adapters return transport-neutral health contracts, measure non-negative latency, use bounded timeouts, and sanitize failures. They do not expose credentials, raw connection URLs, driver exception messages, or stack traces.
+
+Redis and S3 clients are created through explicit factories. No database, Redis, or S3 client is created at module import time. Redis remains transient coordination infrastructure, not durable workflow state. S3 health checks verify bucket reachability and do not write objects.

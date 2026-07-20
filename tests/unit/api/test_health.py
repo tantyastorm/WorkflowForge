@@ -10,11 +10,9 @@ def test_liveness_returns_ok_without_dependency_checks() -> None:
 
     with TestClient(app) as client:
         response = client.get("/health/live")
-        dependencies_response = client.get("/health/dependencies")
 
     assert response.status_code == 200
     assert response.json() == {"status": "ok", "service": "api"}
-    assert dependencies_response.status_code == 404
 
 
 def test_readiness_returns_ready_during_active_lifespan() -> None:

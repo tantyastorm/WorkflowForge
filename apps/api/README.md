@@ -32,8 +32,11 @@ Operational health routes are process-level routes outside product API versionin
 
 - `GET /health/live` returns `200` when the process can answer HTTP.
 - `GET /health/ready` returns `200` after FastAPI startup completes and `503` before startup or after shutdown.
+- `GET /health/dependencies` returns real dependency health for PostgreSQL, Redis, and object storage.
 
-These routes do not check PostgreSQL, Redis, object storage, workers, or the scheduler. A future `/health/dependencies` route will report real dependency health once local infrastructure exists; this app does not return placeholder dependency states.
+Liveness and readiness do not check external dependencies. Dependency health runs bounded PostgreSQL, Redis, and object-storage checks concurrently. It returns HTTP `200` when all required dependencies are healthy and HTTP `503` when any required dependency is unhealthy. Diagnostics are sanitized and do not include credentials, raw driver exceptions, or stack traces.
+
+Worker and scheduler health are not reported yet because those processes do not exist in this phase. The app does not return placeholder worker or scheduler states.
 
 Product routes will be versioned under `WORKFLOWFORGE_API_V1_PREFIX`, which defaults to `/api/v1`. No business routes are exposed yet.
 
@@ -46,7 +49,6 @@ Smoke-test a running local Compose API:
 ```powershell
 Invoke-RestMethod http://127.0.0.1:8000/health/live
 Invoke-RestMethod http://127.0.0.1:8000/health/ready
+Invoke-WebRequest http://127.0.0.1:8000/health/dependencies
 Invoke-WebRequest http://127.0.0.1:8000/openapi.json
 ```
-
-The dependency-health endpoint is still absent in this step.
