@@ -4,6 +4,7 @@ import json
 import os
 import socket
 from http.client import HTTPConnection
+from urllib.parse import urlparse
 
 import pytest
 from pydantic import SecretStr
@@ -37,19 +38,31 @@ async def test_required_dependency_adapters_succeed_against_compose() -> None:
     database_settings = require_postgresql()
     redis_host = os.environ.get("WORKFLOWFORGE_TEST_REDIS_HOST", "localhost")
     redis_port = int(os.environ.get("WORKFLOWFORGE_TEST_REDIS_HOST_PORT", "6379"))
-    minio_port = int(os.environ.get("WORKFLOWFORGE_TEST_MINIO_API_HOST_PORT", "9000"))
+    s3_endpoint_url = os.environ.get("WORKFLOWFORGE_TEST_S3_ENDPOINT_URL")
+    if s3_endpoint_url is None:
+        minio_port = int(os.environ.get("WORKFLOWFORGE_TEST_MINIO_API_HOST_PORT", "9000"))
+        s3_endpoint_url = f"http://localhost:{minio_port}"
     _require_tcp(redis_host, redis_port, "Redis")
-    _require_tcp("localhost", minio_port, "MinIO")
+    _require_url(s3_endpoint_url, "MinIO")
 
     database_engine = create_async_database_engine(database_settings)
     redis_client = create_redis_client(RedisSettings(host=redis_host, port=redis_port))
     s3_settings = S3Settings(
-        endpoint_url=f"http://localhost:{minio_port}",
-        access_key=os.environ.get("WORKFLOWFORGE_S3_ACCESS_KEY", "workflowforge"),
-        secret_key=SecretStr(
-            os.environ.get("WORKFLOWFORGE_S3_SECRET_KEY", "workflowforge_dev_secret")
+        endpoint_url=s3_endpoint_url,
+        access_key=os.environ.get(
+            "WORKFLOWFORGE_TEST_S3_ACCESS_KEY",
+            os.environ.get("WORKFLOWFORGE_S3_ACCESS_KEY", "workflowforge"),
         ),
-        bucket=os.environ.get("WORKFLOWFORGE_S3_BUCKET", "workflowforge"),
+        secret_key=SecretStr(
+            os.environ.get(
+                "WORKFLOWFORGE_TEST_S3_SECRET_KEY",
+                os.environ.get("WORKFLOWFORGE_S3_SECRET_KEY", "workflowforge_dev_secret"),
+            )
+        ),
+        bucket=os.environ.get(
+            "WORKFLOWFORGE_TEST_S3_BUCKET",
+            os.environ.get("WORKFLOWFORGE_S3_BUCKET", "workflowforge"),
+        ),
     )
     s3_client = create_s3_client(s3_settings)
 
@@ -70,9 +83,13 @@ async def test_required_dependency_adapters_succeed_against_compose() -> None:
 
 @pytest.mark.integration
 def test_dependency_health_endpoint_succeeds_against_compose_api() -> None:
-    api_port = int(os.environ.get("WORKFLOWFORGE_TEST_API_HOST_PORT", "8000"))
-    _require_tcp("127.0.0.1", api_port, "API")
-    connection = HTTPConnection("127.0.0.1", api_port, timeout=5)
+    api_base_url = os.environ.get("WORKFLOWFORGE_TEST_API_BASE_URL")
+    if api_base_url is None:
+        api_port = int(os.environ.get("WORKFLOWFORGE_TEST_API_HOST_PORT", "8000"))
+        api_base_url = f"http://127.0.0.1:{api_port}"
+    api_host, api_port = _host_port_from_url(api_base_url)
+    _require_tcp(api_host, api_port, "API")
+    connection = HTTPConnection(api_host, api_port, timeout=5)
     try:
         connection.request(
             "GET",
@@ -103,3 +120,15 @@ def test_dependency_health_endpoint_succeeds_against_compose_api() -> None:
         "worker",
         "scheduler",
     ]
+
+
+def _require_url(url: str, name: str) -> None:
+    host, port = _host_port_from_url(url)
+    _require_tcp(host, port, name)
+
+
+def _host_port_from_url(url: str) -> tuple[str, int]:
+    parsed = urlparse(url)
+    if parsed.hostname is None or parsed.port is None:
+        pytest.skip(f"Integration URL is missing host or port: {url}")
+    return parsed.hostname, parsed.port

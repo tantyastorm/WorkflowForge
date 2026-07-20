@@ -1,8 +1,10 @@
 """Database integration test helpers."""
 
+import os
 import socket
 
 import pytest
+from pydantic import SecretStr
 from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
 from workflowforge_infrastructure.config import DatabaseSettings, Settings
@@ -10,9 +12,27 @@ from workflowforge_infrastructure.database import create_sync_migration_engine
 
 
 def integration_database_settings() -> DatabaseSettings:
-    """Return database settings from WORKFLOWFORGE_DATABASE_* environment variables."""
+    """Return host-side database settings for integration tests."""
 
-    return Settings().database
+    default_settings = Settings().database
+    return DatabaseSettings(
+        host=os.environ.get("WORKFLOWFORGE_TEST_DATABASE_HOST", default_settings.host),
+        port=int(
+            os.environ.get("WORKFLOWFORGE_TEST_DATABASE_HOST_PORT", str(default_settings.port))
+        ),
+        name=os.environ.get("WORKFLOWFORGE_TEST_DATABASE_NAME", default_settings.name),
+        user=os.environ.get("WORKFLOWFORGE_TEST_DATABASE_USER", default_settings.user),
+        password=SecretStr(
+            os.environ.get(
+                "WORKFLOWFORGE_TEST_DATABASE_PASSWORD",
+                default_settings.password.get_secret_value(),
+            )
+        ),
+        echo=default_settings.echo,
+        pool_size=default_settings.pool_size,
+        max_overflow=default_settings.max_overflow,
+        pool_timeout_seconds=default_settings.pool_timeout_seconds,
+    )
 
 
 def require_postgresql() -> DatabaseSettings:

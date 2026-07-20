@@ -38,7 +38,11 @@ class LogLevel(StrEnum):
 class DatabaseSettings(BaseSettings):
     """Validated PostgreSQL database settings."""
 
-    model_config = SettingsConfigDict(extra="forbid", validate_default=True)
+    model_config = SettingsConfigDict(
+        env_prefix="WORKFLOWFORGE_DATABASE_",
+        extra="forbid",
+        validate_default=True,
+    )
 
     host: str = Field(default="localhost", min_length=1)
     port: int = Field(default=5432, ge=1, le=65535)
@@ -74,7 +78,11 @@ class DatabaseSettings(BaseSettings):
 class ApiSettings(BaseSettings):
     """Validated API process settings."""
 
-    model_config = SettingsConfigDict(extra="forbid", validate_default=True)
+    model_config = SettingsConfigDict(
+        env_prefix="WORKFLOWFORGE_API_",
+        extra="forbid",
+        validate_default=True,
+    )
 
     host: str = Field(default="0.0.0.0", min_length=1)
     port: int = Field(default=8000, ge=1, le=65535)
@@ -98,7 +106,11 @@ class ApiSettings(BaseSettings):
 class RedisSettings(BaseSettings):
     """Validated Redis infrastructure settings."""
 
-    model_config = SettingsConfigDict(extra="forbid", validate_default=True)
+    model_config = SettingsConfigDict(
+        env_prefix="WORKFLOWFORGE_REDIS_",
+        extra="forbid",
+        validate_default=True,
+    )
 
     host: str = Field(default="localhost", min_length=1)
     port: int = Field(default=6379, ge=1, le=65535)
@@ -120,7 +132,11 @@ class RedisSettings(BaseSettings):
 class S3Settings(BaseSettings):
     """Validated S3-compatible object storage settings."""
 
-    model_config = SettingsConfigDict(extra="forbid", validate_default=True)
+    model_config = SettingsConfigDict(
+        env_prefix="WORKFLOWFORGE_S3_",
+        extra="forbid",
+        validate_default=True,
+    )
 
     endpoint_url: str = "http://localhost:9000"
     access_key: str = Field(default="workflowforge", min_length=1)
@@ -145,7 +161,11 @@ class S3Settings(BaseSettings):
 class CelerySettings(BaseSettings):
     """Validated Celery task transport settings."""
 
-    model_config = SettingsConfigDict(extra="forbid", validate_default=True)
+    model_config = SettingsConfigDict(
+        env_prefix="WORKFLOWFORGE_CELERY_",
+        extra="forbid",
+        validate_default=True,
+    )
 
     broker_url: SecretStr | None = None
     result_backend: SecretStr | None = None
@@ -221,7 +241,11 @@ class CelerySettings(BaseSettings):
 class SchedulerSettings(BaseSettings):
     """Validated scheduler process settings."""
 
-    model_config = SettingsConfigDict(extra="forbid", validate_default=True)
+    model_config = SettingsConfigDict(
+        env_prefix="WORKFLOWFORGE_SCHEDULER_",
+        extra="forbid",
+        validate_default=True,
+    )
 
     heartbeat_interval_seconds: int = Field(default=30, gt=0)
     heartbeat_ttl_seconds: int = Field(default=90, gt=0)

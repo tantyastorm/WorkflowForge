@@ -6,7 +6,7 @@ from logging.config import fileConfig
 
 from alembic import context
 from sqlalchemy import engine_from_config, pool
-from workflowforge_infrastructure.config import get_settings
+from workflowforge_infrastructure.config import DatabaseSettings, get_settings
 from workflowforge_infrastructure.database.base import metadata
 
 config = context.config
@@ -20,6 +20,9 @@ target_metadata = metadata
 def database_url() -> str:
     """Return the validated synchronous database URL for Alembic."""
 
+    configured_database = config.attributes.get("database_settings")
+    if isinstance(configured_database, DatabaseSettings):
+        return configured_database.sync_sqlalchemy_url().render_as_string(hide_password=False)
     return get_settings().database.sync_sqlalchemy_url().render_as_string(hide_password=False)
 
 

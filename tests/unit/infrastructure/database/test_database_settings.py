@@ -19,6 +19,42 @@ def test_database_settings_defaults() -> None:
     assert settings.pool_timeout_seconds == 30
 
 
+def test_database_settings_ignore_generic_os_environment(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("HOST", "bad-host")
+    monkeypatch.setenv("PORT", "15432")
+    monkeypatch.setenv("NAME", "bad-name")
+    monkeypatch.setenv("USER", "runner")
+    monkeypatch.setenv("PASSWORD", "bad-password")
+
+    settings = DatabaseSettings()
+
+    assert settings.host == "localhost"
+    assert settings.port == 5432
+    assert settings.name == "workflowforge"
+    assert settings.user == "workflowforge"
+    assert settings.password.get_secret_value() == "workflowforge"
+
+
+def test_database_settings_accept_prefixed_environment(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("WORKFLOWFORGE_DATABASE_HOST", "postgres.local")
+    monkeypatch.setenv("WORKFLOWFORGE_DATABASE_PORT", "15432")
+    monkeypatch.setenv("WORKFLOWFORGE_DATABASE_NAME", "workflowforge_test")
+    monkeypatch.setenv("WORKFLOWFORGE_DATABASE_USER", "tester")
+    monkeypatch.setenv("WORKFLOWFORGE_DATABASE_PASSWORD", "testing")
+
+    settings = DatabaseSettings()
+
+    assert settings.host == "postgres.local"
+    assert settings.port == 15432
+    assert settings.name == "workflowforge_test"
+    assert settings.user == "tester"
+    assert settings.password.get_secret_value() == "testing"
+
+
 def test_database_urls_use_expected_drivers_and_encode_password() -> None:
     settings = DatabaseSettings(
         host="db.example.test",
