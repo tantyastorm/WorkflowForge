@@ -1,0 +1,213 @@
+name: Backend Quality
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/backend.yml"
+      - ".env.example"
+      - "alembic.ini"
+      - "apps/api/**"
+      - "apps/scheduler/**"
+      - "apps/worker/**"
+      - "docker-compose.yml"
+      - "infrastructure/docker/**"
+      - "infrastructure/minio/**"
+      - "migrations/**"
+      - "packages/**"
+      - "pyproject.toml"
+      - "scripts/**"
+      - "tests/**"
+      - "uv.lock"
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/backend.yml"
+      - ".env.example"
+      - "alembic.ini"
+      - "apps/api/**"
+      - "apps/scheduler/**"
+      - "apps/worker/**"
+      - "docker-compose.yml"
+      - "infrastructure/docker/**"
+      - "infrastructure/minio/**"
+      - "migrations/**"
+      - "packages/**"
+      - "pyproject.toml"
+      - "scripts/**"
+      - "tests/**"
+      - "uv.lock"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  PYTHON_VERSION: "3.12"
+  UV_VERSION: "0.9.5"
+
+jobs:
+  quality:
+    name: Backend Quality
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set Up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Set Up uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          version: ${{ env.UV_VERSION }}
+          enable-cache: true
+
+      - name: Sync Python Workspace
+        run: uv sync --all-packages --group dev --frozen
+
+      - name: Validate Architecture
+        run: uv run python scripts/validate_architecture.py
+
+      - name: Check Ruff Formatting
+        run: uv run ruff format --check .
+
+      - name: Run Ruff Lint
+        run: uv run ruff check .
+
+      - name: Run MyPy
+        run: uv run mypy apps packages migrations scripts tests
+
+      - name: Run Backend Unit Tests
+        run: uv run pytest -m "not integration"
+
+  integration:
+    name: Backend Integration
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    env:
+      WORKFLOWFORGE_API_HOST_PORT: "18000"
+      WORKFLOWFORGE_POSTGRES_HOST_PORT: "15432"
+      WORKFLOWFORGE_REDIS_HOST: "127.0.0.1"
+      WORKFLOWFORGE_REDIS_HOST_PORT: "16379"
+      WORKFLOWFORGE_MINIO_API_HOST_PORT: "19000"
+      WORKFLOWFORGE_MINIO_CONSOLE_HOST_PORT: "19001"
+      WORKFLOWFORGE_DATABASE_HOST: "127.0.0.1"
+      WORKFLOWFORGE_DATABASE_PORT: "15432"
+      WORKFLOWFORGE_DATABASE_NAME: "workflowforge"
+      WORKFLOWFORGE_DATABASE_USER: "workflowforge"
+      WORKFLOWFORGE_DATABASE_PASSWORD: "workflowforge_ci"
+      WORKFLOWFORGE_TEST_API_HOST_PORT: "18000"
+      WORKFLOWFORGE_TEST_REDIS_HOST: "127.0.0.1"
+      WORKFLOWFORGE_TEST_REDIS_HOST_PORT: "16379"
+      WORKFLOWFORGE_TEST_MINIO_API_HOST_PORT: "19000"
+      WORKFLOWFORGE_S3_ACCESS_KEY: "workflowforge"
+      WORKFLOWFORGE_S3_SECRET_KEY: "workflowforge_ci_secret"
+      WORKFLOWFORGE_S3_BUCKET: "workflowforge"
+      WORKFLOWFORGE_SCHEDULER_HEARTBEAT_INTERVAL_SECONDS: "5"
+      WORKFLOWFORGE_SCHEDULER_HEARTBEAT_TTL_SECONDS: "30"
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set Up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Set Up uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          version: ${{ env.UV_VERSION }}
+          enable-cache: true
+
+      - name: Sync Python Workspace
+        run: uv sync --all-packages --group dev --frozen
+
+      - name: Write CI Compose Environment
+        run: |
+          cat > .env <<'EOF'
+          WORKFLOWFORGE_ENVIRONMENT=test
+          WORKFLOWFORGE_DEBUG=false
+          WORKFLOWFORGE_LOG_LEVEL=INFO
+          WORKFLOWFORGE_LOG_FORMAT=console
+          WORKFLOWFORGE_API_HOST_PORT=18000
+          WORKFLOWFORGE_POSTGRES_HOST_PORT=15432
+          WORKFLOWFORGE_REDIS_HOST_PORT=16379
+          WORKFLOWFORGE_MINIO_API_HOST_PORT=19000
+          WORKFLOWFORGE_MINIO_CONSOLE_HOST_PORT=19001
+          POSTGRES_DB=workflowforge
+          POSTGRES_USER=workflowforge
+          POSTGRES_PASSWORD=workflowforge_ci
+          WORKFLOWFORGE_DATABASE_NAME=workflowforge
+          WORKFLOWFORGE_DATABASE_USER=workflowforge
+          WORKFLOWFORGE_DATABASE_PASSWORD=workflowforge_ci
+          WORKFLOWFORGE_REDIS_PASSWORD=
+          MINIO_ROOT_USER=workflowforge
+          MINIO_ROOT_PASSWORD=workflowforge_ci_secret
+          WORKFLOWFORGE_S3_ACCESS_KEY=workflowforge
+          WORKFLOWFORGE_S3_SECRET_KEY=workflowforge_ci_secret
+          WORKFLOWFORGE_S3_BUCKET=workflowforge
+          WORKFLOWFORGE_SCHEDULER_HEARTBEAT_INTERVAL_SECONDS=5
+          WORKFLOWFORGE_SCHEDULER_HEARTBEAT_TTL_SECONDS=30
+          WORKFLOWFORGE_CELERY_WORKER_CONCURRENCY=1
+          EOF
+
+      - name: Start Compose Stack
+        run: docker compose up --build -d
+
+      - name: Wait For Platform Health
+        run: |
+          for attempt in {1..60}; do
+            if curl --fail --silent "http://127.0.0.1:${WORKFLOWFORGE_API_HOST_PORT}/health/dependencies" >/dev/null; then
+              curl --fail --silent "http://127.0.0.1:${WORKFLOWFORGE_API_HOST_PORT}/health/live" >/dev/null
+              curl --fail --silent "http://127.0.0.1:${WORKFLOWFORGE_API_HOST_PORT}/health/ready" >/dev/null
+              curl --fail --silent "http://127.0.0.1:${WORKFLOWFORGE_API_HOST_PORT}/openapi.json" >/dev/null
+              exit 0
+            fi
+            sleep 2
+          done
+          docker compose ps
+          docker compose logs api worker scheduler migrate minio-init
+          exit 1
+
+      - name: Show Compose Services
+        run: docker compose ps
+
+      - name: Run Integration Tests Without Skips
+        run: |
+          set -o pipefail
+          uv run pytest -m integration -rA | tee integration-output.txt
+          if grep -E "SKIPPED|skipped" integration-output.txt; then
+            echo "Integration tests skipped unexpectedly in CI."
+            exit 1
+          fi
+
+      - name: Run Backend Coverage Without Skips
+        run: |
+          set -o pipefail
+          uv run pytest --cov --cov-report=term-missing -rA | tee coverage-output.txt
+          if grep -E "SKIPPED|skipped" coverage-output.txt; then
+            echo "Coverage run skipped unexpectedly in CI."
+            exit 1
+          fi
+
+      - name: Print Compose Diagnostics On Failure
+        if: failure()
+        run: |
+          docker compose ps
+          docker compose logs api worker scheduler migrate minio-init postgres redis minio
+
+      - name: Tear Down Compose Stack
+        if: always()
+        run: docker compose down -v

@@ -1,0 +1,79 @@
+name: Frontend Quality
+
+on:
+  pull_request:
+    paths:
+      - ".editorconfig"
+      - ".gitattributes"
+      - ".github/workflows/frontend.yml"
+      - "apps/web/**"
+  push:
+    branches:
+      - main
+    paths:
+      - ".editorconfig"
+      - ".gitattributes"
+      - ".github/workflows/frontend.yml"
+      - "apps/web/**"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  NODE_VERSION: "24"
+  VITE_API_BASE_URL: "http://localhost:8000"
+
+jobs:
+  quality:
+    name: Frontend Quality
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set Up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Enable Corepack
+        run: |
+          corepack enable
+          corepack prepare "$(node -p "require('./apps/web/package.json').packageManager")" --activate
+
+      - name: Resolve pnpm Store Path
+        id: pnpm-store
+        run: echo "path=$(corepack pnpm --dir apps/web store path --silent)" >> "$GITHUB_OUTPUT"
+
+      - name: Restore pnpm Cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ steps.pnpm-store.outputs.path }}
+          key: ${{ runner.os }}-pnpm-${{ hashFiles('apps/web/pnpm-lock.yaml') }}
+          restore-keys: |
+            ${{ runner.os }}-pnpm-
+
+      - name: Install Frontend Dependencies
+        run: corepack pnpm --dir apps/web install --frozen-lockfile
+
+      - name: Check Prettier Formatting
+        run: corepack pnpm --dir apps/web format:check
+
+      - name: Run ESLint
+        run: corepack pnpm --dir apps/web lint
+
+      - name: Run TypeScript Check
+        run: corepack pnpm --dir apps/web typecheck
+
+      - name: Run Frontend Tests
+        run: corepack pnpm --dir apps/web test:run
+
+      - name: Build Frontend
+        run: corepack pnpm --dir apps/web build

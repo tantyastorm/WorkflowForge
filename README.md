@@ -84,11 +84,13 @@ uv sync --all-packages --group dev
 Current quality checks:
 
 ```powershell
+uv sync --all-packages --group dev
+uv run python scripts/validate_architecture.py
 uv run ruff format --check .
 uv run ruff check .
-uv run mypy apps packages scripts tests
-uv run python scripts/validate_architecture.py
-uv run pytest
+uv run mypy apps packages migrations scripts tests
+uv run pytest -m "not integration"
+uv run pytest -m integration
 uv run pytest --cov --cov-report=term-missing
 ```
 
@@ -101,6 +103,8 @@ uv run alembic downgrade base
 ```
 
 Database integration tests require a real PostgreSQL database configured through `WORKFLOWFORGE_DATABASE_*` environment variables.
+
+GitHub Actions runs separate backend, frontend, and Docker validation workflows on pull requests, pushes to `main`, and manual dispatch. The backend workflow validates architecture, Ruff formatting and linting, MyPy, unit tests, integration tests, and the existing coverage threshold of 80%. The integration job starts the real Docker Compose stack, waits for API dependency health, runs all integration tests without skips, prints container logs on failure, and tears down CI volumes afterward. The Docker workflow validates Compose syntax and builds the shared backend image used by the API, migration, worker, and scheduler services. The frontend workflow runs the locked pnpm install, Prettier, ESLint, TypeScript, Vitest, and the production build.
 
 Local infrastructure starts with Docker Compose:
 
@@ -175,6 +179,7 @@ VITE_API_BASE_URL=http://localhost:8000
 Frontend quality checks:
 
 ```powershell
+corepack pnpm --dir apps/web install --frozen-lockfile
 corepack pnpm --dir apps/web format:check
 corepack pnpm --dir apps/web lint
 corepack pnpm --dir apps/web typecheck

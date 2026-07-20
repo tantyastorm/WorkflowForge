@@ -36,6 +36,8 @@ Current services:
 - `minio-init`: one-shot bucket initialization for `WORKFLOWFORGE_S3_BUCKET`.
 - `migrate`: one-shot `uv run alembic upgrade head`.
 - `api`: FastAPI on host port `8000`.
+- `worker`: Celery worker consuming the default and diagnostic queues.
+- `scheduler`: Celery Beat process publishing the diagnostic scheduler heartbeat.
 
 Compose service hostnames are `postgres`, `redis`, and `minio`. Host-side tools use `localhost` plus the mapped host port.
 
@@ -61,4 +63,4 @@ The `-v` reset deletes local development database, Redis, and MinIO data.
 
 The API waits for PostgreSQL, Redis, and MinIO health checks, successful MinIO bucket initialization, and successful migrations. API startup does not run Alembic itself.
 
-This foundation intentionally excludes workers, scheduler, frontend, Celery, application Redis/S3 adapters, and `/health/dependencies`.
+The GitHub Actions integration job starts this Compose stack with CI-only local credentials and deterministic host ports, waits for `/health/dependencies`, runs the integration test suite without skips, prints service logs on failure, and tears the CI stack down with ephemeral volumes. Local development shutdown remains `docker compose down` unless you intentionally want the destructive `-v` reset.
