@@ -66,3 +66,20 @@ and generation.
 The application boundary also defines a `RefreshTokenHasher` port. It is
 separate from password hashing because high-entropy opaque refresh tokens are
 stored as deterministic digests for lookup and replay detection.
+
+Session lifecycle use cases include `StartUserSession`, `RefreshSession`,
+`LogoutSession`, `LogoutAllSessions`, and `VerifyAccessToken`. They depend on
+ports for access-token encoding, refresh-token generation, refresh-token
+digesting, time, ID generation, and session persistence. They return safe token
+or principal contracts and do not expose password hashes, refresh-token digests,
+tenant context, roles, or permissions.
+
+State-changing session lifecycle use cases also depend on the narrow
+`TransactionManager` port. Login commits only after authentication, token
+issuance, and session persistence succeed; failures roll back and return no
+token pair. Refresh commits only after compare-and-swap rotation succeeds. If an
+already-used or superseded refresh token is replayed, the refresh use case
+revokes the affected session and current refresh credential, commits that
+revocation, and then raises `RefreshTokenReplayError` so replay evidence cannot
+be lost by normal exception rollback. Logout and logout-all commit successful
+revocations and roll back failures.

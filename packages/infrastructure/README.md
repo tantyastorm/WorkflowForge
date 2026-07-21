@@ -90,6 +90,12 @@ server-generated high-entropy opaque refresh tokens. This adapter is deliberatel
 separate from password hashing and supports deterministic lookup plus
 constant-time digest verification.
 
+Infrastructure provides an HS256 JWT access-token codec using PyJWT. It validates
+the configured issuer and audience, requires `sub`, `sid`, `jti`, `iat`, `exp`,
+`iss`, and `aud`, restricts algorithms to HS256, and maps JWT library failures to
+sanitized application errors. It also provides secure refresh-token generation
+using Python `secrets`, a UTC clock adapter, and a UUID4 generator adapter.
+
 ## Session Persistence
 
 Infrastructure implements the application session repository with PostgreSQL

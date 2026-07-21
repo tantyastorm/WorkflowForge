@@ -15,8 +15,11 @@ This document records the planned WorkflowForge identity foundation for Phase 2.
 WorkflowForge will use a hybrid token model:
 
 - Short-lived JWT access tokens.
+- HS256 signing with a configured secret.
+- 15-minute access-token lifetime by default.
 - Access tokens transported through `Authorization: Bearer`.
 - Opaque rotating refresh tokens transported through an HttpOnly cookie for the React web application.
+- 30-day refresh-token and session lifetimes by default.
 - Durable server-side session records and refresh-token records.
 - Refresh-token reuse detection.
 - Token-family revocation.
@@ -104,8 +107,14 @@ the replacement generation in one repository operation. The old record receives
 `used_at` and `replaced_by_token_id`, while the new record keeps the same token
 family and advances generation by one. Reuse of an already-used, revoked,
 expired, or superseded refresh token can be detected because the digest remains
-durable as a non-current lineage record. Later refresh use cases will decide how
-to map replay detection to session or family revocation.
+durable as a non-current lineage record. The application refresh use case treats
+already-used or replaced refresh tokens as replay and revokes the affected
+session and its current refresh credentials. Another session for the same user is
+not revoked by that replay response.
+
+Access-token verification validates the JWT signature and required claims, then
+checks durable session state. Revoked, expired, missing, or user-mismatched
+sessions reject the token without resolving tenant membership or permissions.
 
 ## Registration And Bootstrap
 

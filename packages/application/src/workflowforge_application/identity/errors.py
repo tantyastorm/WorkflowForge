@@ -61,3 +61,31 @@ class SessionRevokedError(IdentityApplicationError):
 
 class RefreshRotationConflictError(IdentityApplicationError):
     """Raised when refresh-token rotation state is stale or invalid."""
+
+
+class InvalidAccessTokenError(IdentityApplicationError):
+    """Raised when an access token is malformed or invalid."""
+
+
+class ExpiredAccessTokenError(InvalidAccessTokenError):
+    """Raised when an access token has expired."""
+
+
+class InvalidRefreshTokenError(IdentityApplicationError):
+    """Raised when a refresh token cannot be used."""
+
+
+class ExpiredRefreshTokenError(InvalidRefreshTokenError):
+    """Raised when a refresh token has expired."""
+
+
+class RefreshTokenReplayError(InvalidRefreshTokenError):
+    """Raised when refresh-token replay is detected."""
+
+
+class SessionOwnershipError(IdentityApplicationError):
+    """Raised when a session does not belong to the expected user."""
+
+
+class TokenIssuanceError(IdentityApplicationError):
+    """Raised when a token cannot be issued."""

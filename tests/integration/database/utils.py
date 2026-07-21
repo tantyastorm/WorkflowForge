@@ -35,6 +35,11 @@ def integration_database_settings() -> DatabaseSettings:
     )
 
 
+def _database_environment_is_configured() -> bool:
+    prefixes = ("WORKFLOWFORGE_TEST_DATABASE_", "WORKFLOWFORGE_DATABASE_")
+    return any(key.startswith(prefixes) for key in os.environ)
+
+
 def require_postgresql() -> DatabaseSettings:
     """Return database settings or skip when PostgreSQL is unavailable."""
 
@@ -50,6 +55,8 @@ def require_postgresql() -> DatabaseSettings:
         with engine.connect() as connection:
             connection.execute(text("SELECT 1"))
     except SQLAlchemyError as exc:
+        if _database_environment_is_configured():
+            pytest.fail(f"Configured PostgreSQL integration database is unusable: {exc}")
         pytest.skip(f"PostgreSQL integration database is unavailable: {exc}")
     finally:
         engine.dispose()

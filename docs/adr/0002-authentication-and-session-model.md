@@ -17,6 +17,11 @@ The backend will persist durable server-side session and refresh-token records. 
 
 Access JWTs contain only `sub`, `sid`, `jti`, `iat`, `exp`, `iss`, and `aud`. They do not contain organization IDs, roles, permission matrices, email addresses, secrets, or token material.
 
+The initial implementation signs access JWTs with HS256 using a configured secret
+that must be replaced outside local development. Access tokens live for 15
+minutes. Refresh tokens and sessions live for 30 days by default, and refresh
+token lifetime does not exceed session lifetime.
+
 Passwords use Argon2id, minimum length 12, maximum length 256, support passphrases and password managers, avoid arbitrary complexity requirements, support future parameter rehashing, and must never be logged in plaintext.
 
 Emails are normalized with `email.strip().casefold()`. WorkflowForge persists both display or original email and normalized email, with uniqueness based on normalized email. Provider-specific transformations such as Gmail dot removal are not used.
@@ -44,6 +49,10 @@ The system must implement token signing, refresh-token digesting, session persis
 Refresh-cookie endpoints must use HttpOnly cookies, `Secure` in production, `SameSite=Lax` by default, restricted cookie paths, Origin validation, and CSRF protection for cookie-authenticated state-changing endpoints.
 
 Refresh tokens are cryptographically random opaque values. Only SHA-256 token digests are persisted. Access tokens, refresh tokens, password material, API keys, provider credentials, and secrets must not be logged or placed in audit metadata.
+
+Access-token verification checks both JWT claims and durable session state.
+Revoked, expired, missing, or user-mismatched sessions reject otherwise valid
+access tokens so logout takes effect before access-token expiry.
 
 Redis-backed rate limiting is planned for login, registration, and refresh. PostgreSQL remains the source of truth for users, sessions, and refresh-token records.
 

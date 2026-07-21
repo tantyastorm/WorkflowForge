@@ -12,6 +12,7 @@ from workflowforge_infrastructure.database.errors import (
 )
 from workflowforge_infrastructure.database.health import DatabaseHealthCheck, check_database_health
 from workflowforge_infrastructure.database.session import (
+    SqlAlchemyTransactionManager,
     async_session_scope,
     create_async_session_factory,
 )
@@ -21,6 +22,7 @@ __all__ = [
     "DatabaseError",
     "DatabaseHealthCheck",
     "DatabaseUnavailableError",
+    "SqlAlchemyTransactionManager",
     "async_session_scope",
     "check_database_health",
     "create_async_database_engine",

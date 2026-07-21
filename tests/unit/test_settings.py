@@ -4,6 +4,7 @@ import pytest
 from pydantic import SecretStr, ValidationError
 from workflowforge_infrastructure.config.settings import (
     ApiSettings,
+    AuthSettings,
     CelerySettings,
     Environment,
     LogFormat,
@@ -14,8 +15,20 @@ from workflowforge_infrastructure.config.settings import (
     Settings,
 )
 
+AUTH_ENVIRONMENT_VARIABLES = (
+    "WORKFLOWFORGE_AUTH_JWT_ALGORITHM",
+    "WORKFLOWFORGE_AUTH_JWT_ISSUER",
+    "WORKFLOWFORGE_AUTH_JWT_AUDIENCE",
+    "WORKFLOWFORGE_AUTH_JWT_SIGNING_SECRET",
+    "WORKFLOWFORGE_AUTH_ACCESS_TOKEN_LIFETIME_SECONDS",
+    "WORKFLOWFORGE_AUTH_REFRESH_TOKEN_LIFETIME_SECONDS",
+    "WORKFLOWFORGE_AUTH_SESSION_LIFETIME_SECONDS",
+    "WORKFLOWFORGE_AUTH_REFRESH_TOKEN_BYTES",
+)
+
 
 def test_settings_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
+    clear_auth_environment(monkeypatch)
     monkeypatch.delenv("WORKFLOWFORGE_APP_NAME", raising=False)
     monkeypatch.delenv("WORKFLOWFORGE_ENVIRONMENT", raising=False)
     monkeypatch.delenv("WORKFLOWFORGE_DEBUG", raising=False)
@@ -61,9 +74,17 @@ def test_settings_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
     assert settings.scheduler.heartbeat_interval_seconds == 30
     assert settings.scheduler.heartbeat_ttl_seconds == 90
     assert settings.scheduler.heartbeat_key == "workflowforge:diagnostics:scheduler:last_seen"
+    assert settings.auth.jwt_algorithm == "HS256"
+    assert settings.auth.jwt_issuer == "workflowforge"
+    assert settings.auth.jwt_audience == "workflowforge-api"
+    assert settings.auth.access_token_lifetime_seconds == 900
+    assert settings.auth.refresh_token_lifetime_seconds == 2_592_000
+    assert settings.auth.session_lifetime_seconds == 2_592_000
+    assert settings.auth.refresh_token_bytes == 32
 
 
 def test_settings_environment_overrides(monkeypatch: pytest.MonkeyPatch) -> None:
+    clear_auth_environment(monkeypatch)
     monkeypatch.setenv("WORKFLOWFORGE_APP_NAME", "WorkflowForge Tests")
     monkeypatch.setenv("WORKFLOWFORGE_ENVIRONMENT", "test")
     monkeypatch.setenv("WORKFLOWFORGE_DEBUG", "false")
@@ -293,6 +314,60 @@ def test_scheduler_heartbeat_ttl_must_exceed_interval() -> None:
         SchedulerSettings(heartbeat_interval_seconds=10, heartbeat_ttl_seconds=10)
 
 
+def test_auth_settings_environment_overrides(monkeypatch: pytest.MonkeyPatch) -> None:
+    clear_auth_environment(monkeypatch)
+    monkeypatch.setenv("WORKFLOWFORGE_AUTH_JWT_ISSUER", "issuer")
+    monkeypatch.setenv("WORKFLOWFORGE_AUTH_JWT_AUDIENCE", "audience")
+    monkeypatch.setenv(
+        "WORKFLOWFORGE_AUTH_JWT_SIGNING_SECRET",
+        "override-secret-with-at-least-32-characters",
+    )
+    monkeypatch.setenv("WORKFLOWFORGE_AUTH_ACCESS_TOKEN_LIFETIME_SECONDS", "60")
+    monkeypatch.setenv("WORKFLOWFORGE_AUTH_REFRESH_TOKEN_LIFETIME_SECONDS", "120")
+    monkeypatch.setenv("WORKFLOWFORGE_AUTH_SESSION_LIFETIME_SECONDS", "180")
+    monkeypatch.setenv("WORKFLOWFORGE_AUTH_REFRESH_TOKEN_BYTES", "48")
+
+    settings = Settings()
+
+    assert settings.auth.jwt_issuer == "issuer"
+    assert settings.auth.jwt_audience == "audience"
+    assert settings.auth.jwt_signing_secret.get_secret_value().startswith("override")
+    assert settings.auth.access_token_lifetime_seconds == 60
+    assert settings.auth.refresh_token_lifetime_seconds == 120
+    assert settings.auth.session_lifetime_seconds == 180
+    assert settings.auth.refresh_token_bytes == 48
+    assert "override-secret" not in repr(settings.auth)
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("jwt_algorithm", "none"),
+        ("jwt_signing_secret", "too-short"),
+        ("access_token_lifetime_seconds", 0),
+        ("refresh_token_lifetime_seconds", 0),
+        ("session_lifetime_seconds", 0),
+        ("refresh_token_bytes", 31),
+    ],
+)
+def test_auth_settings_reject_invalid_values(field: str, value: object) -> None:
+    with pytest.raises(ValidationError):
+        AuthSettings.model_validate({field: value})
+
+
+def test_auth_refresh_lifetime_must_not_exceed_session_lifetime() -> None:
+    with pytest.raises(ValidationError):
+        AuthSettings(refresh_token_lifetime_seconds=120, session_lifetime_seconds=60)
+
+
+def test_production_rejects_default_auth_secret(monkeypatch: pytest.MonkeyPatch) -> None:
+    clear_auth_environment(monkeypatch)
+    monkeypatch.setenv("WORKFLOWFORGE_ENVIRONMENT", "production")
+
+    with pytest.raises(ValidationError, match="JWT signing secret"):
+        Settings()
+
+
 def test_settings_reject_invalid_environment(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("WORKFLOWFORGE_ENVIRONMENT", "staging")
 
@@ -318,6 +393,7 @@ def test_settings_ignore_unrelated_environment(monkeypatch: pytest.MonkeyPatch) 
 def test_nested_settings_ignore_generic_os_environment(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    clear_auth_environment(monkeypatch)
     generic_values = {
         "HOST": "bad-host",
         "PORT": "1",
@@ -343,3 +419,8 @@ def test_nested_settings_ignore_generic_os_environment(
     assert settings.s3.secret_key.get_secret_value() == "workflowforge_dev_secret"
     assert settings.celery.default_queue == "workflowforge"
     assert settings.scheduler.heartbeat_interval_seconds == 30
+
+
+def clear_auth_environment(monkeypatch: pytest.MonkeyPatch) -> None:
+    for variable in AUTH_ENVIRONMENT_VARIABLES:
+        monkeypatch.delenv(variable, raising=False)

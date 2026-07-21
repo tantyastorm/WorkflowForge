@@ -17,6 +17,7 @@ from workflowforge_domain.identity import (
 )
 
 from workflowforge_application.identity.credentials import PasswordCredential
+from workflowforge_application.identity.tokens import AccessTokenClaims, IssuedRefreshToken
 
 
 class UserRepository(Protocol):
@@ -56,6 +57,47 @@ class RefreshTokenHasher(Protocol):
 
     def verify_token(self, plain_token: str, token_digest: RefreshTokenDigest) -> bool:
         """Return whether a plaintext token matches a stored digest."""
+
+
+class AccessTokenCodec(Protocol):
+    """Access-token issuing and verification port."""
+
+    def issue_token(self, claims: AccessTokenClaims) -> str:
+        """Return an encoded access token."""
+
+    def verify_token(self, token: str) -> AccessTokenClaims:
+        """Return verified access-token claims."""
+
+
+class RefreshTokenGenerator(Protocol):
+    """Generator for opaque refresh tokens."""
+
+    def generate(self) -> IssuedRefreshToken:
+        """Return a one-time plaintext refresh token."""
+
+
+class Clock(Protocol):
+    """Application clock port."""
+
+    def now(self) -> datetime:
+        """Return the current timezone-aware UTC timestamp."""
+
+
+class IdGenerator(Protocol):
+    """UUID generation port."""
+
+    def new_uuid(self) -> UUID:
+        """Return a new non-nil UUID."""
+
+
+class TransactionManager(Protocol):
+    """Narrow transaction boundary for application use cases."""
+
+    async def commit(self) -> None:
+        """Commit the current application transaction."""
+
+    async def rollback(self) -> None:
+        """Roll back the current application transaction."""
 
 
 class PasswordCredentialRepository(Protocol):

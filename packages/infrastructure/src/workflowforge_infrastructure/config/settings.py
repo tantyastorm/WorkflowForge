@@ -264,6 +264,57 @@ class SchedulerSettings(BaseSettings):
         return self
 
 
+DEFAULT_JWT_SIGNING_SECRET = "workflowforge-development-jwt-secret-change-before-production-0001"
+
+
+class AuthSettings(BaseSettings):
+    """Validated authentication and session lifecycle settings."""
+
+    model_config = SettingsConfigDict(
+        env_prefix="WORKFLOWFORGE_AUTH_",
+        extra="forbid",
+        validate_default=True,
+    )
+
+    jwt_algorithm: str = "HS256"
+    jwt_issuer: str = Field(default="workflowforge", min_length=1)
+    jwt_audience: str = Field(default="workflowforge-api", min_length=1)
+    jwt_signing_secret: SecretStr = Field(default=SecretStr(DEFAULT_JWT_SIGNING_SECRET))
+    access_token_lifetime_seconds: int = Field(default=900, gt=0)
+    refresh_token_lifetime_seconds: int = Field(default=2_592_000, gt=0)
+    session_lifetime_seconds: int = Field(default=2_592_000, gt=0)
+    refresh_token_bytes: int = Field(default=32, ge=32)
+
+    @field_validator("jwt_algorithm")
+    @classmethod
+    def validate_jwt_algorithm(cls, value: str) -> str:
+        """Require the single supported JWT algorithm."""
+
+        if value != "HS256":
+            msg = "JWT algorithm must be HS256"
+            raise ValueError(msg)
+        return value
+
+    @field_validator("jwt_signing_secret")
+    @classmethod
+    def validate_jwt_signing_secret(cls, value: SecretStr) -> SecretStr:
+        """Require a strong symmetric signing secret."""
+
+        if len(value.get_secret_value()) < 32:
+            msg = "JWT signing secret must be at least 32 characters"
+            raise ValueError(msg)
+        return value
+
+    @model_validator(mode="after")
+    def validate_lifetime_policy(self) -> "AuthSettings":
+        """Require refresh-token lifetime not to exceed session lifetime."""
+
+        if self.refresh_token_lifetime_seconds > self.session_lifetime_seconds:
+            msg = "Refresh token lifetime must not exceed session lifetime"
+            raise ValueError(msg)
+        return self
+
+
 class Settings(BaseSettings):
     """Validated process settings shared by backend packages."""
 
@@ -291,6 +342,7 @@ class Settings(BaseSettings):
     s3: S3Settings = Field(default_factory=lambda: S3Settings())
     celery: CelerySettings = Field(default_factory=lambda: CelerySettings())
     scheduler: SchedulerSettings = Field(default_factory=lambda: SchedulerSettings())
+    auth: AuthSettings = Field(default_factory=lambda: AuthSettings())
 
     @field_validator("cors_origins", mode="before")
     @classmethod
@@ -300,6 +352,18 @@ class Settings(BaseSettings):
         if isinstance(value, str):
             return tuple(origin.strip() for origin in value.split(",") if origin.strip())
         return value
+
+    @model_validator(mode="after")
+    def validate_production_auth_secret(self) -> "Settings":
+        """Prevent the development JWT secret in production."""
+
+        if (
+            self.environment is Environment.PRODUCTION
+            and self.auth.jwt_signing_secret.get_secret_value() == DEFAULT_JWT_SIGNING_SECRET
+        ):
+            msg = "Production requires an explicit JWT signing secret"
+            raise ValueError(msg)
+        return self
 
     @field_validator("cors_origins")
     @classmethod

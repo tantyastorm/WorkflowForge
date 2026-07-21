@@ -21,6 +21,11 @@ Authorization: Bearer <access-token>
 
 For the React web application, refresh tokens are opaque rotating tokens sent through an HttpOnly cookie. The frontend keeps the access token in memory rather than `localStorage` or other JavaScript-readable persistent storage.
 
+Access JWTs are signed with HS256 using `WORKFLOWFORGE_AUTH_JWT_SIGNING_SECRET`.
+The default access-token lifetime is 15 minutes. The JWT contains only `sub`,
+`sid`, `jti`, `iat`, `exp`, `iss`, and `aud`; tenant, role, permission,
+password, and refresh-token state are excluded.
+
 Refresh-cookie endpoints must use:
 
 - `HttpOnly`.
@@ -48,6 +53,18 @@ inserts the next token generation in one transaction. Stale, revoked, expired,
 or already-used rotation attempts fail with a stable conflict and preserve
 replay-detection evidence. Logout of one session and logout-all revoke current
 refresh credentials without involving tenant context.
+
+The refresh use case responds to replay of an already-used token by revoking the
+affected session and its current refresh credentials. Access-token verification
+checks durable session state after JWT verification, so revoked sessions stop
+new authenticated requests before access-token expiry.
+
+Session lifecycle use cases own explicit transaction boundaries through an
+application `TransactionManager` port. Login returns tokens only after the
+session and initial refresh-token record are committed. Normal refresh returns a
+new token pair only after the replacement generation is committed. Replay
+detection is intentionally durable before the security error is returned:
+revocation is committed, then `RefreshTokenReplayError` is raised.
 
 ## Password Security
 

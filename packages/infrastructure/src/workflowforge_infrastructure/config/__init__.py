@@ -2,6 +2,7 @@
 
 from workflowforge_infrastructure.config.settings import (
     ApiSettings,
+    AuthSettings,
     CelerySettings,
     DatabaseSettings,
     Environment,
@@ -16,6 +17,7 @@ from workflowforge_infrastructure.config.settings import (
 
 __all__ = [
     "ApiSettings",
+    "AuthSettings",
     "CelerySettings",
     "DatabaseSettings",
     "Environment",

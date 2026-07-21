@@ -369,6 +369,14 @@ digest, generation, active session state, and token state so concurrent refresh
 attempts cannot both succeed silently. JWT signing, cookie transport, CSRF, and
 HTTP login/refresh/logout endpoints remain outside this foundation.
 
+The application session lifecycle builds on that foundation without introducing
+HTTP. Login authenticates credentials, creates a durable session, persists the
+initial refresh-token digest, and issues a minimal HS256 access JWT. Refresh
+rotates the opaque refresh token and issues a replacement access token. Logout
+revokes one owned session, logout-all revokes every active session for one user,
+and access-token verification combines JWT validation with durable session-state
+checks. Tenant context, membership, roles, and permissions remain separate.
+
 ## Migration Strategy
 
 WorkflowForge uses Alembic for PostgreSQL migrations. Migrations should support starting from an empty database, prefer forward-only production movement, and provide downgrade support where practical.
