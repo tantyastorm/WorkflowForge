@@ -13,6 +13,7 @@ from workflowforge_application.identity import (
     DuplicateOrganizationMembershipError,
     DuplicateOrganizationSlugError,
     MissingIdentityReferenceError,
+    PasswordCredential,
 )
 from workflowforge_domain.identity import (
     EmailAddress,
@@ -31,8 +32,10 @@ from workflowforge_infrastructure.database import (
 from workflowforge_infrastructure.identity import (
     SqlAlchemyMembershipRepository,
     SqlAlchemyOrganizationRepository,
+    SqlAlchemyPasswordCredentialRepository,
     SqlAlchemyUserRepository,
 )
+from workflowforge_infrastructure.identity.models import UserRecord
 
 from tests.integration.database.utils import require_postgresql
 
@@ -93,6 +96,72 @@ async def test_user_email_normalization_is_exact_and_provider_neutral() -> None:
         assert await repository.get_by_normalized_email("first.last@gmail.com") == dotted
         assert await repository.get_by_normalized_email("firstlast@gmail.com") is None
         assert await repository.get_by_normalized_email("first.last+tag@gmail.com") == plus_tagged
+    finally:
+        await session.close()
+        await dispose_async_engine(engine)
+
+
+@pytest.mark.integration
+async def test_password_credential_repository_create_retrieve_replace_and_cascade() -> None:
+    engine, session = await _session()
+
+    try:
+        user_repo = SqlAlchemyUserRepository(session)
+        credential_repo = SqlAlchemyPasswordCredentialRepository(session)
+        user = await user_repo.add(_user())
+
+        created = await credential_repo.set_for_user(
+            PasswordCredential(
+                user_id=user.id,
+                password_hash="$argon2id$first-hash",
+                created_at=NOW,
+                updated_at=NOW,
+            )
+        )
+        await session.commit()
+
+        assert await credential_repo.get_by_user_id(user.id) == created
+        assert created.password_hash == "$argon2id$first-hash"
+
+        replaced = await credential_repo.set_for_user(
+            created.replace_hash("$argon2id$replacement-hash", now=NOW + timedelta(seconds=1))
+        )
+        await session.commit()
+
+        assert await credential_repo.get_by_user_id(user.id) == replaced
+        assert replaced.password_hash == "$argon2id$replacement-hash"
+        assert replaced.created_at == NOW
+        assert replaced.updated_at == NOW + timedelta(seconds=1)
+
+        user_record = await session.get(UserRecord, user.id)
+        assert user_record is not None
+        await session.delete(user_record)
+        await session.commit()
+
+        assert await credential_repo.get_by_user_id(user.id) is None
+    finally:
+        await session.close()
+        await dispose_async_engine(engine)
+
+
+@pytest.mark.integration
+async def test_password_credential_repository_missing_user_rolls_back() -> None:
+    engine, session = await _session()
+
+    try:
+        credential_repo = SqlAlchemyPasswordCredentialRepository(session)
+
+        with pytest.raises(MissingIdentityReferenceError):
+            await credential_repo.set_for_user(
+                PasswordCredential(
+                    user_id=USER_ID,
+                    password_hash="$argon2id$hash",
+                    created_at=NOW,
+                    updated_at=NOW,
+                )
+            )
+
+        assert await credential_repo.get_by_user_id(USER_ID) is None
     finally:
         await session.close()
         await dispose_async_engine(engine)

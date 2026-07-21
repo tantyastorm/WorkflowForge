@@ -6,6 +6,7 @@ from uuid import UUID
 
 import pytest
 from sqlalchemy import Table
+from workflowforge_application.identity import PasswordCredential
 from workflowforge_domain.identity import (
     EmailAddress,
     InvalidTimestamp,
@@ -18,13 +19,16 @@ from workflowforge_domain.identity import (
 from workflowforge_infrastructure.identity.models import (
     MembershipRecord,
     OrganizationRecord,
+    PasswordCredentialRecord,
     UserRecord,
 )
 from workflowforge_infrastructure.identity.repository import (
     _membership_from_record,
     _organization_from_record,
+    _password_credential_from_record,
     _record_from_membership,
     _record_from_organization,
+    _record_from_password_credential,
     _record_from_user,
     _user_from_record,
 )
@@ -70,6 +74,23 @@ def test_membership_record_mapping_round_trips_domain_values_and_enums() -> None
     assert mapped == membership
 
 
+def test_password_credential_record_mapping_round_trips_without_repr_leak() -> None:
+    credential = PasswordCredential(
+        user_id=USER_ID,
+        password_hash="$argon2id$stored-secret",
+        created_at=NOW,
+        updated_at=NOW,
+    )
+
+    record = _record_from_password_credential(credential)
+    mapped = _password_credential_from_record(record)
+
+    assert isinstance(record, PasswordCredentialRecord)
+    assert record.password_hash == "$argon2id$stored-secret"
+    assert mapped == credential
+    assert "stored-secret" not in repr(mapped)
+
+
 def test_identity_tables_define_expected_constraints_and_indexes() -> None:
     assert UserRecord.__table__.c.normalized_email.unique is True
     assert UserRecord.__table__.c.normalized_email.index is True
@@ -82,6 +103,8 @@ def test_identity_tables_define_expected_constraints_and_indexes() -> None:
     }
     indexes = {index.name for index in membership_table.indexes}
 
+    assert PasswordCredentialRecord.__table__.c.user_id.primary_key is True
+    assert PasswordCredentialRecord.__table__.c.password_hash.nullable is False
     assert "uq_memberships_organization_user" in unique_constraints
     assert "ix_memberships_organization_id" in indexes
     assert "ix_memberships_user_id" in indexes

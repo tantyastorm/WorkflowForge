@@ -38,7 +38,19 @@ Refresh rotation must be atomic and must support reuse detection and token-famil
 
 ## Password Security
 
-Passwords use Argon2id with a minimum length of 12 and maximum length of 256. Passphrases and password managers are allowed. Arbitrary complexity rules are not required. Stored hashes should support future parameter rehashing.
+Passwords use Argon2id through an infrastructure adapter with a minimum length of
+12 and maximum length of 256 enforced by application password-setting behavior.
+Passphrases and password managers are allowed. Arbitrary complexity rules are
+not required. Stored hashes include the salt, algorithm, and parameters in the
+library-managed hash format and can support future parameter rehashing.
+
+Plaintext passwords are accepted only at application use-case boundaries and are
+hashed before persistence. Password hashes are stored in the separate
+`password_credentials` table rather than on the durable user identity record.
+Authentication uses generic invalid-credential behavior for unknown emails,
+missing credentials, and incorrect passwords, and performs dummy verification for
+missing-account paths where possible. Disabled users are rejected and no session
+or token is issued by the password authentication use case.
 
 ## Rate Limiting
 

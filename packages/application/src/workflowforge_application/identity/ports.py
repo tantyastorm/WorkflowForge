@@ -11,6 +11,8 @@ from workflowforge_domain.identity import (
     User,
 )
 
+from workflowforge_application.identity.credentials import PasswordCredential
+
 
 class UserRepository(Protocol):
     """Persistence port for users."""
@@ -26,6 +28,29 @@ class UserRepository(Protocol):
 
     async def update(self, user: User) -> User:
         """Persist an existing user state."""
+
+
+class PasswordHasher(Protocol):
+    """Password hashing port for credential use cases."""
+
+    def hash_password(self, plain_password: str) -> str:
+        """Return a durable password hash for a plaintext password."""
+
+    def verify_password(self, plain_password: str, password_hash: str) -> bool:
+        """Return whether a plaintext password matches a stored hash."""
+
+    def dummy_password_hash(self) -> str:
+        """Return a safe dummy hash for missing-account verification."""
+
+
+class PasswordCredentialRepository(Protocol):
+    """Persistence port for password credentials."""
+
+    async def get_by_user_id(self, user_id: UUID) -> PasswordCredential | None:
+        """Return a user's password credential, when present."""
+
+    async def set_for_user(self, credential: PasswordCredential) -> PasswordCredential:
+        """Create or replace one user's password credential."""
 
 
 class OrganizationRepository(Protocol):

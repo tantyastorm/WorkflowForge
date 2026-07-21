@@ -23,6 +23,8 @@ from workflowforge_domain.identity.value_objects import (
 
 from workflowforge_infrastructure.database.base import Base
 
+PASSWORD_HASH_MAX_LENGTH = 1024
+
 
 class UserRecord(Base):
     """Infrastructure-owned users table."""
@@ -129,5 +131,19 @@ class MembershipRecord(Base):
     joined_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     suspended_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     removed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class PasswordCredentialRecord(Base):
+    """Infrastructure-owned password credentials table."""
+
+    __tablename__ = "password_credentials"
+
+    user_id: Mapped[UUID] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    password_hash: Mapped[str] = mapped_column(String(PASSWORD_HASH_MAX_LENGTH), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)

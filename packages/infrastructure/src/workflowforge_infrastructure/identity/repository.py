@@ -15,6 +15,8 @@ from workflowforge_application.identity import (
     MembershipRepository,
     MissingIdentityReferenceError,
     OrganizationRepository,
+    PasswordCredential,
+    PasswordCredentialRepository,
     UserRepository,
 )
 from workflowforge_domain.identity import (
@@ -30,6 +32,7 @@ from workflowforge_domain.identity import (
 from workflowforge_infrastructure.identity.models import (
     MembershipRecord,
     OrganizationRecord,
+    PasswordCredentialRecord,
     UserRecord,
 )
 
@@ -88,6 +91,38 @@ class SqlAlchemyUserRepository(UserRepository):
             msg = "User normalized email already exists."
             raise DuplicateNormalizedEmailError(msg) from exc
         return _user_from_record(record)
+
+
+class SqlAlchemyPasswordCredentialRepository(PasswordCredentialRepository):
+    """SQLAlchemy implementation of the password credential repository port."""
+
+    def __init__(self, session: AsyncSession) -> None:
+        self._session = session
+
+    async def get_by_user_id(self, user_id: UUID) -> PasswordCredential | None:
+        """Return a user's password credential, when present."""
+
+        record = await self._session.get(PasswordCredentialRecord, user_id)
+        if record is None:
+            return None
+        return _password_credential_from_record(record)
+
+    async def set_for_user(self, credential: PasswordCredential) -> PasswordCredential:
+        """Create or replace a user's password credential."""
+
+        record = await self._session.get(PasswordCredentialRecord, credential.user_id)
+        if record is None:
+            record = _record_from_password_credential(credential)
+            self._session.add(record)
+        else:
+            _update_password_credential_record(record, credential)
+        try:
+            await self._session.flush()
+        except IntegrityError as exc:
+            await self._session.rollback()
+            msg = "Password credential references a missing user."
+            raise MissingIdentityReferenceError(msg) from exc
+        return _password_credential_from_record(record)
 
 
 class SqlAlchemyOrganizationRepository(OrganizationRepository):
@@ -288,6 +323,37 @@ def _update_user_record(record: UserRecord, user: User) -> None:
     record.created_at = user.created_at
     record.updated_at = user.updated_at
     record.disabled_at = user.disabled_at
+
+
+def _record_from_password_credential(
+    credential: PasswordCredential,
+) -> PasswordCredentialRecord:
+    return PasswordCredentialRecord(
+        user_id=credential.user_id,
+        password_hash=credential.password_hash,
+        created_at=credential.created_at,
+        updated_at=credential.updated_at,
+    )
+
+
+def _password_credential_from_record(
+    record: PasswordCredentialRecord,
+) -> PasswordCredential:
+    return PasswordCredential(
+        user_id=record.user_id,
+        password_hash=record.password_hash,
+        created_at=record.created_at.astimezone(UTC),
+        updated_at=record.updated_at.astimezone(UTC),
+    )
+
+
+def _update_password_credential_record(
+    record: PasswordCredentialRecord,
+    credential: PasswordCredential,
+) -> None:
+    record.password_hash = credential.password_hash
+    record.created_at = credential.created_at
+    record.updated_at = credential.updated_at
 
 
 def _record_from_organization(organization: Organization) -> OrganizationRecord:

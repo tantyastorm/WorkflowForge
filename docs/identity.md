@@ -38,7 +38,7 @@ This model supports the React application by keeping the refresh credential in a
 
 ## Password Model
 
-WorkflowForge passwords will use:
+WorkflowForge passwords use:
 
 - Argon2id password hashing.
 - Minimum length of 12 characters.
@@ -48,7 +48,22 @@ WorkflowForge passwords will use:
 - Future parameter rehashing when stored hash parameters become outdated.
 - No plaintext password logging.
 
-Validation errors should describe length constraints without echoing password material. Password hashes, hash parameters, and rehash decisions belong behind infrastructure cryptography adapters and application use cases, not HTTP routes.
+Validation errors describe length constraints without echoing password material. Password
+hashes, hash parameters, and future rehash decisions belong behind infrastructure
+cryptography adapters and application use cases, not HTTP routes.
+
+Password credentials are stored separately from the `users` table in
+`password_credentials`. The table has one row per user, keyed by `user_id`, and
+is reached only through the password credential repository boundary. Normal
+user lookups return display identity, lifecycle state, and timestamps only; they
+do not return password hashes.
+
+Email/password authentication normalizes email with the same identity value
+object used by user persistence. Unknown users, missing credentials, malformed
+stored credentials, and wrong passwords fail with the same generic invalid
+credential behavior. Disabled users do not authenticate even when the supplied
+password is correct. Authentication returns only a safe principal; session,
+refresh-token, tenant-context, and permission resolution remain separate steps.
 
 ## Email Normalization
 
@@ -106,4 +121,5 @@ WorkflowForge should not create a generic `AuthService` that owns identity, sess
 
 Phase 2 persists users with display email, normalized email, display name, active state, and lifecycle timestamps. Normalized email remains the uniqueness key and uses the same `email.strip().casefold()` behavior as the domain value object.
 
-Password credentials, sessions, refresh tokens, login, registration use cases, and API endpoints remain outside this persistence step.
+Sessions, refresh tokens, HTTP login routes, registration routes, and API endpoints remain
+outside this persistence step.

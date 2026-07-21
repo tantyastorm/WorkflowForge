@@ -1,13 +1,30 @@
 """Alembic migration integration tests."""
 
+from collections.abc import Iterator
+
 import pytest
 from alembic import command
 from alembic.config import Config
-from sqlalchemy import inspect
+from alembic.script import ScriptDirectory
+from sqlalchemy import inspect, text
 from workflowforge_infrastructure.config import DatabaseSettings
 from workflowforge_infrastructure.database import create_sync_migration_engine
 
 from tests.integration.database.utils import require_postgresql
+
+
+@pytest.fixture(autouse=True)
+def restore_database_to_migration_head() -> Iterator[None]:
+    """Keep migration tests from leaking downgraded schema state."""
+
+    settings = require_postgresql()
+    alembic_config = _alembic_config(settings)
+    command.upgrade(alembic_config, "head")
+    try:
+        yield
+    finally:
+        command.upgrade(alembic_config, "head")
+        assert _current_revision(settings) == _head_revision(alembic_config)
 
 
 @pytest.mark.integration
@@ -28,11 +45,12 @@ def test_migrations_upgrade_from_empty_downgrade_and_reupgrade() -> None:
             "documents",
             "memberships",
             "organizations",
+            "password_credentials",
             "users",
         }
         with engine.connect() as connection:
             version_rows = connection.exec_driver_sql("SELECT version_num FROM alembic_version")
-            assert version_rows.scalar_one() == "0004_memberships"
+            assert version_rows.scalar_one() == "0005_password_credentials"
     finally:
         engine.dispose()
 
@@ -159,6 +177,40 @@ def test_identity_tables_have_expected_columns_constraints_and_indexes_at_head()
 
 
 @pytest.mark.integration
+def test_password_credentials_table_has_expected_columns_and_constraints_at_head() -> None:
+    settings = require_postgresql()
+    command.upgrade(_alembic_config(settings), "head")
+
+    engine = create_sync_migration_engine(settings)
+    try:
+        inspector = inspect(engine)
+        columns = {
+            column["name"]: column for column in inspector.get_columns("password_credentials")
+        }
+        primary_key = inspector.get_pk_constraint("password_credentials")
+        foreign_keys = inspector.get_foreign_keys("password_credentials")
+    finally:
+        engine.dispose()
+
+    assert set(columns) == {
+        "user_id",
+        "password_hash",
+        "created_at",
+        "updated_at",
+    }
+    assert columns["user_id"]["nullable"] is False
+    assert columns["password_hash"]["nullable"] is False
+    assert columns["created_at"]["nullable"] is False
+    assert columns["updated_at"]["nullable"] is False
+    assert primary_key["constrained_columns"] == ["user_id"]
+    assert {
+        (foreign_key["referred_table"], tuple(foreign_key["constrained_columns"]))
+        for foreign_key in foreign_keys
+    } == {("users", ("user_id",))}
+    assert foreign_keys[0]["options"].get("ondelete") == "CASCADE"
+
+
+@pytest.mark.integration
 def test_downgrade_to_baseline_removes_documents_table() -> None:
     settings = require_postgresql()
     alembic_config = _alembic_config(settings)
@@ -174,7 +226,31 @@ def test_downgrade_to_baseline_removes_documents_table() -> None:
     assert table_names == ["alembic_version"]
 
 
+@pytest.mark.integration
+def test_migration_fixture_restores_head_before_each_test() -> None:
+    settings = require_postgresql()
+    alembic_config = _alembic_config(settings)
+
+    assert _current_revision(settings) == _head_revision(alembic_config)
+
+
 def _alembic_config(settings: DatabaseSettings) -> Config:
     config = Config("alembic.ini")
     config.attributes["database_settings"] = settings
     return config
+
+
+def _head_revision(config: Config) -> str:
+    head = ScriptDirectory.from_config(config).get_current_head()
+    assert head is not None
+    return head
+
+
+def _current_revision(settings: DatabaseSettings) -> str:
+    engine = create_sync_migration_engine(settings)
+    try:
+        with engine.connect() as connection:
+            revision = connection.execute(text("SELECT version_num FROM alembic_version"))
+            return str(revision.scalar_one())
+    finally:
+        engine.dispose()

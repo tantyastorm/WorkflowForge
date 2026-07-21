@@ -71,3 +71,16 @@ Infrastructure implements application repository ports for users, organizations,
 Role and membership status values are persisted as bounded strings with database check constraints rather than PostgreSQL native enums. This keeps public enum values stable while avoiding enum-alter migration friction.
 
 Membership repository methods require organization identity for tenant-owned membership lookups where appropriate. Repositories map rows to validated domain entities, translate duplicate email, slug, and membership conflicts into application errors, and do not commit transactions implicitly.
+
+Password credentials are persisted in `password_credentials`, keyed one-to-one
+by `user_id` with a cascading foreign key to `users`. The SQLAlchemy password
+credential repository is the only normal persistence path for password hashes;
+ordinary user repository methods do not return credential state.
+
+## Password Hashing
+
+Infrastructure provides an Argon2id `PasswordHasher` adapter using
+`argon2-cffi`. Hashes use the library format that embeds salt, algorithm, and
+parameters. Verification handles mismatched, malformed, and unsupported hashes
+safely by returning `False`, and the adapter exposes a dummy hash for
+missing-account authentication paths.

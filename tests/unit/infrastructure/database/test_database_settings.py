@@ -4,8 +4,22 @@ import pytest
 from pydantic import SecretStr, ValidationError
 from workflowforge_infrastructure.config import DatabaseSettings, Settings
 
+DATABASE_ENVIRONMENT_VARIABLES = (
+    "WORKFLOWFORGE_DATABASE_HOST",
+    "WORKFLOWFORGE_DATABASE_PORT",
+    "WORKFLOWFORGE_DATABASE_NAME",
+    "WORKFLOWFORGE_DATABASE_USER",
+    "WORKFLOWFORGE_DATABASE_PASSWORD",
+    "WORKFLOWFORGE_DATABASE_ECHO",
+    "WORKFLOWFORGE_DATABASE_POOL_SIZE",
+    "WORKFLOWFORGE_DATABASE_MAX_OVERFLOW",
+    "WORKFLOWFORGE_DATABASE_POOL_TIMEOUT_SECONDS",
+)
 
-def test_database_settings_defaults() -> None:
+
+def test_database_settings_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
+    clear_database_environment(monkeypatch)
+
     settings = DatabaseSettings()
 
     assert settings.host == "localhost"
@@ -22,6 +36,7 @@ def test_database_settings_defaults() -> None:
 def test_database_settings_ignore_generic_os_environment(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    clear_database_environment(monkeypatch)
     monkeypatch.setenv("HOST", "bad-host")
     monkeypatch.setenv("PORT", "15432")
     monkeypatch.setenv("NAME", "bad-name")
@@ -40,6 +55,7 @@ def test_database_settings_ignore_generic_os_environment(
 def test_database_settings_accept_prefixed_environment(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    clear_database_environment(monkeypatch)
     monkeypatch.setenv("WORKFLOWFORGE_DATABASE_HOST", "postgres.local")
     monkeypatch.setenv("WORKFLOWFORGE_DATABASE_PORT", "15432")
     monkeypatch.setenv("WORKFLOWFORGE_DATABASE_NAME", "workflowforge_test")
@@ -100,6 +116,7 @@ def test_database_settings_reject_invalid_values(field: str, value: object) -> N
 
 
 def test_nested_database_environment_overrides(monkeypatch: pytest.MonkeyPatch) -> None:
+    clear_database_environment(monkeypatch)
     monkeypatch.setenv("WORKFLOWFORGE_DATABASE_HOST", "postgres.local")
     monkeypatch.setenv("WORKFLOWFORGE_DATABASE_PORT", "15432")
     monkeypatch.setenv("WORKFLOWFORGE_DATABASE_NAME", "workflowforge_test")
@@ -121,3 +138,8 @@ def test_nested_database_environment_overrides(monkeypatch: pytest.MonkeyPatch) 
     assert settings.database.pool_size == 2
     assert settings.database.max_overflow == 3
     assert settings.database.pool_timeout_seconds == 4.5
+
+
+def clear_database_environment(monkeypatch: pytest.MonkeyPatch) -> None:
+    for variable in DATABASE_ENVIRONMENT_VARIABLES:
+        monkeypatch.delenv(variable, raising=False)

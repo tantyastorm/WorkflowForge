@@ -41,3 +41,16 @@ This package does not resolve tenant context from HTTP requests, query persisten
 The identity application boundary defines repository ports for users, organizations, and memberships. Ports use domain entities and value objects only; SQLAlchemy models remain infrastructure details.
 
 The ports are intentionally focused on current identity persistence needs rather than a generic base repository. Membership lookups that target tenant-owned membership state include organization identity to make cross-tenant access harder to express accidentally.
+
+## Password Authentication
+
+The identity application boundary also defines `PasswordHasher` and
+`PasswordCredentialRepository` ports, plus focused `AuthenticateUser` and
+`SetUserPassword` use cases. Plaintext passwords enter only through those use
+case inputs. Password setting hashes before persistence, while authentication
+returns a safe user principal without password hashes, tokens, sessions,
+organization selection, or permissions.
+
+Invalid email/password combinations, unknown users, and missing credentials use
+generic invalid-credential behavior. Disabled users are rejected by the
+authentication use case and do not receive an authenticated result.

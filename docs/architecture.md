@@ -347,7 +347,17 @@ Roles are `owner`, `admin`, `operator`, `reviewer`, and `auditor`. Permission ma
 
 Audit records are append-only through application behavior and include tenant-aware context where available. Audit metadata is bounded and must not contain secret or token material. Tenant-scoped audit queries require authorization, while global events are handled deliberately.
 
-The identity persistence foundation stores users, organizations, and memberships in PostgreSQL. It does not include password credential storage, sessions, refresh tokens, authentication endpoints, tenant context resolution from HTTP, or audit persistence.
+The identity persistence foundation stores users, organizations, memberships,
+and password credentials in PostgreSQL. Password credentials are separated from
+the user identity record and are accessed through a dedicated application
+repository port so ordinary user queries do not expose password hashes.
+
+Email/password authentication is an application use case. It normalizes email,
+retrieves credential state through the credential boundary, verifies Argon2id
+hashes through an infrastructure adapter, rejects disabled users, and returns a
+safe authenticated principal without session or token material. Sessions,
+refresh tokens, authentication endpoints, tenant context resolution from HTTP,
+and audit persistence remain separate Phase 2 concerns.
 
 ## Migration Strategy
 
