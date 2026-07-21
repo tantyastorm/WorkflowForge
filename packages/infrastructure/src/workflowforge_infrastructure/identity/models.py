@@ -8,6 +8,7 @@ from sqlalchemy import (
     DateTime,
     ForeignKey,
     Index,
+    Integer,
     String,
     UniqueConstraint,
 )
@@ -24,6 +25,7 @@ from workflowforge_domain.identity.value_objects import (
 from workflowforge_infrastructure.database.base import Base
 
 PASSWORD_HASH_MAX_LENGTH = 1024
+REFRESH_TOKEN_DIGEST_LENGTH = 64
 
 
 class UserRecord(Base):
@@ -147,3 +149,66 @@ class PasswordCredentialRecord(Base):
     password_hash: Mapped[str] = mapped_column(String(PASSWORD_HASH_MAX_LENGTH), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class AuthSessionRecord(Base):
+    """Infrastructure-owned authenticated sessions table."""
+
+    __tablename__ = "auth_sessions"
+    __table_args__ = (
+        CheckConstraint("expires_at > created_at", name="expires_after_created"),
+        CheckConstraint("updated_at >= created_at", name="updated_after_created"),
+        CheckConstraint(
+            "revoked_at IS NULL OR revoked_at >= created_at",
+            name="revoked_after_created",
+        ),
+        Index("ix_auth_sessions_user_id", "user_id"),
+        Index("ix_auth_sessions_user_revoked_expires", "user_id", "revoked_at", "expires_at"),
+    )
+
+    id: Mapped[UUID] = mapped_column(primary_key=True)
+    user_id: Mapped[UUID] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class RefreshTokenRecordModel(Base):
+    """Infrastructure-owned refresh-token rotation records."""
+
+    __tablename__ = "refresh_tokens"
+    __table_args__ = (
+        UniqueConstraint("token_hash", name="uq_refresh_tokens_token_hash"),
+        UniqueConstraint("session_id", "generation", name="uq_refresh_tokens_session_generation"),
+        CheckConstraint("generation >= 0", name="generation_non_negative"),
+        CheckConstraint("expires_at > issued_at", name="expires_after_issued"),
+        CheckConstraint("used_at IS NULL OR used_at >= issued_at", name="used_after_issued"),
+        CheckConstraint(
+            "revoked_at IS NULL OR revoked_at >= issued_at",
+            name="revoked_after_issued",
+        ),
+        Index("ix_refresh_tokens_session_id", "session_id"),
+        Index("ix_refresh_tokens_token_family_id", "token_family_id"),
+        Index("ix_refresh_tokens_session_current", "session_id", "used_at", "revoked_at"),
+    )
+
+    id: Mapped[UUID] = mapped_column(primary_key=True)
+    session_id: Mapped[UUID] = mapped_column(
+        ForeignKey("auth_sessions.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    token_family_id: Mapped[UUID] = mapped_column(nullable=False)
+    token_hash: Mapped[str] = mapped_column(String(REFRESH_TOKEN_DIGEST_LENGTH), nullable=False)
+    generation: Mapped[int] = mapped_column(Integer, nullable=False)
+    issued_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    replaced_by_token_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("refresh_tokens.id"),
+        nullable=True,
+    )

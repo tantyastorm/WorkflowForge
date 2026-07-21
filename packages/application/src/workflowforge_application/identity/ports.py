@@ -1,13 +1,18 @@
 """Identity application repository ports."""
 
+from datetime import datetime
 from typing import Protocol
 from uuid import UUID
 
 from workflowforge_domain.identity import (
+    AuthSession,
     EmailAddress,
     Membership,
     Organization,
     OrganizationSlug,
+    RefreshTokenDigest,
+    RefreshTokenRecord,
+    SessionId,
     User,
 )
 
@@ -43,6 +48,16 @@ class PasswordHasher(Protocol):
         """Return a safe dummy hash for missing-account verification."""
 
 
+class RefreshTokenHasher(Protocol):
+    """Digesting port for high-entropy opaque refresh tokens."""
+
+    def digest_token(self, plain_token: str) -> RefreshTokenDigest:
+        """Return a deterministic digest for a refresh token."""
+
+    def verify_token(self, plain_token: str, token_digest: RefreshTokenDigest) -> bool:
+        """Return whether a plaintext token matches a stored digest."""
+
+
 class PasswordCredentialRepository(Protocol):
     """Persistence port for password credentials."""
 
@@ -51,6 +66,55 @@ class PasswordCredentialRepository(Protocol):
 
     async def set_for_user(self, credential: PasswordCredential) -> PasswordCredential:
         """Create or replace one user's password credential."""
+
+
+class SessionRepository(Protocol):
+    """Persistence port for authenticated sessions and refresh-token lineage."""
+
+    async def add(
+        self,
+        *,
+        session: AuthSession,
+        refresh_token: RefreshTokenRecord,
+    ) -> AuthSession:
+        """Persist a session and its initial refresh token atomically."""
+
+    async def get_by_id(self, session_id: SessionId) -> AuthSession | None:
+        """Return a session by ID, when present."""
+
+    async def get_active_by_id(
+        self,
+        session_id: SessionId,
+        *,
+        at: datetime,
+    ) -> AuthSession | None:
+        """Return a non-revoked, non-expired session by ID, when present."""
+
+    async def get_refresh_token_by_digest(
+        self,
+        token_digest: RefreshTokenDigest,
+    ) -> RefreshTokenRecord | None:
+        """Return a refresh-token record by digest, when present."""
+
+    async def update(self, session: AuthSession) -> AuthSession:
+        """Persist session lifecycle state."""
+
+    async def revoke(self, session_id: SessionId, *, revoked_at: datetime) -> AuthSession:
+        """Revoke one session and its current refresh credentials."""
+
+    async def revoke_all_for_user(self, user_id: UUID, *, revoked_at: datetime) -> int:
+        """Revoke all active sessions for one user and return the affected count."""
+
+    async def rotate_refresh_token(
+        self,
+        *,
+        session_id: SessionId,
+        expected_digest: RefreshTokenDigest,
+        expected_generation: int,
+        replacement: RefreshTokenRecord,
+        rotated_at: datetime,
+    ) -> RefreshTokenRecord:
+        """Atomically consume the expected refresh token and persist its replacement."""
 
 
 class OrganizationRepository(Protocol):

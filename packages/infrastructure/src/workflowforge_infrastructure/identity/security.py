@@ -2,9 +2,13 @@
 
 from __future__ import annotations
 
+import hashlib
+import hmac
+
 from argon2 import PasswordHasher
 from argon2.exceptions import InvalidHashError, VerificationError, VerifyMismatchError
 from argon2.low_level import Type
+from workflowforge_domain.identity import RefreshTokenDigest
 
 
 class Argon2PasswordHasher:
@@ -62,3 +66,21 @@ class Argon2PasswordHasher:
             return self._hasher.check_needs_rehash(password_hash)
         except (InvalidHashError, VerificationError):
             return False
+
+
+class Sha256RefreshTokenHasher:
+    """SHA-256 digest adapter for high-entropy opaque refresh tokens."""
+
+    def __repr__(self) -> str:
+        return "Sha256RefreshTokenHasher(algorithm='sha256')"
+
+    def digest_token(self, plain_token: str) -> RefreshTokenDigest:
+        """Return a deterministic SHA-256 digest for a refresh token."""
+
+        return RefreshTokenDigest(hashlib.sha256(plain_token.encode("utf-8")).hexdigest())
+
+    def verify_token(self, plain_token: str, token_digest: RefreshTokenDigest) -> bool:
+        """Return whether a plaintext refresh token matches a stored digest."""
+
+        expected = self.digest_token(plain_token)
+        return hmac.compare_digest(expected.value, token_digest.value)

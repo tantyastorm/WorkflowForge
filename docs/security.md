@@ -32,9 +32,22 @@ Refresh-cookie endpoints must use:
 
 ## Refresh-Token Storage
 
-Refresh tokens are cryptographically random opaque values. Only the SHA-256 digest is persisted. Raw refresh tokens, access tokens, password material, API keys, provider credentials, and session secrets must not be logged or written to audit metadata.
+Refresh tokens are cryptographically random opaque values. Only the SHA-256
+digest is persisted. Raw refresh tokens, access tokens, password material, API
+keys, provider credentials, and session secrets must not be logged or written to
+audit metadata.
 
-Refresh rotation must be atomic and must support reuse detection and token-family revocation.
+Refresh-token digesting is separate from password hashing. Passwords use Argon2id;
+server-generated high-entropy refresh tokens use deterministic SHA-256 digests
+so they can be looked up and compared. Comparison in application code uses
+constant-time digest comparison.
+
+Refresh rotation is atomic at the repository boundary. Rotation consumes the
+expected current token digest and generation, records replacement lineage, and
+inserts the next token generation in one transaction. Stale, revoked, expired,
+or already-used rotation attempts fail with a stable conflict and preserve
+replay-detection evidence. Logout of one session and logout-all revoke current
+refresh credentials without involving tenant context.
 
 ## Password Security
 

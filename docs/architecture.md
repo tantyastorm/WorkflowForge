@@ -359,6 +359,16 @@ safe authenticated principal without session or token material. Sessions,
 refresh tokens, authentication endpoints, tenant context resolution from HTTP,
 and audit persistence remain separate Phase 2 concerns.
 
+The session persistence foundation stores tenant-independent authenticated
+sessions in PostgreSQL and stores refresh-token rotation lineage separately from
+the session row. Refresh-token rows persist SHA-256 digests only, link to a
+session and token family, track generation, issued/expiry/use/revocation
+timestamps, and point to the replacement token after successful rotation.
+Repository rotation uses compare-and-swap semantics over session ID, current
+digest, generation, active session state, and token state so concurrent refresh
+attempts cannot both succeed silently. JWT signing, cookie transport, CSRF, and
+HTTP login/refresh/logout endpoints remain outside this foundation.
+
 ## Migration Strategy
 
 WorkflowForge uses Alembic for PostgreSQL migrations. Migrations should support starting from an empty database, prefer forward-only production movement, and provide downgrade support where practical.

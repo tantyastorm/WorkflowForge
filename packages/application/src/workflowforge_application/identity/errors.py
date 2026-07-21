@@ -41,3 +41,23 @@ class DuplicatePasswordCredentialError(IdentityApplicationError):
 
 class MalformedStoredCredentialError(IdentityApplicationError):
     """Raised when durable credential state cannot be safely interpreted."""
+
+
+class DuplicateRefreshTokenDigestError(IdentityApplicationError):
+    """Raised when a refresh-token digest already exists."""
+
+
+class SessionNotFoundError(IdentityApplicationError):
+    """Raised when an authenticated session is missing."""
+
+
+class SessionExpiredError(IdentityApplicationError):
+    """Raised when an authenticated session is expired."""
+
+
+class SessionRevokedError(IdentityApplicationError):
+    """Raised when an authenticated session has been revoked."""
+
+
+class RefreshRotationConflictError(IdentityApplicationError):
+    """Raised when refresh-token rotation state is stale or invalid."""

@@ -54,3 +54,15 @@ organization selection, or permissions.
 Invalid email/password combinations, unknown users, and missing credentials use
 generic invalid-credential behavior. Disabled users are rejected by the
 authentication use case and do not receive an authenticated result.
+
+## Sessions
+
+The identity application boundary defines a `SessionRepository` port for durable
+authenticated sessions and refresh-token lineage. Sessions are tenant-independent
+and can be looked up, revoked individually, revoked in bulk for logout-all, and
+rotated with compare-and-swap semantics over the expected refresh-token digest
+and generation.
+
+The application boundary also defines a `RefreshTokenHasher` port. It is
+separate from password hashing because high-entropy opaque refresh tokens are
+stored as deterministic digests for lookup and replay detection.

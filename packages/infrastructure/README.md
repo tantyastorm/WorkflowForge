@@ -84,3 +84,24 @@ Infrastructure provides an Argon2id `PasswordHasher` adapter using
 parameters. Verification handles mismatched, malformed, and unsupported hashes
 safely by returning `False`, and the adapter exposes a dummy hash for
 missing-account authentication paths.
+
+Infrastructure also provides a SHA-256 refresh-token digest adapter for
+server-generated high-entropy opaque refresh tokens. This adapter is deliberately
+separate from password hashing and supports deterministic lookup plus
+constant-time digest verification.
+
+## Session Persistence
+
+Infrastructure implements the application session repository with PostgreSQL
+tables for `auth_sessions` and `refresh_tokens`. A user may have multiple
+sessions. Sessions store user ID, creation/update/expiry timestamps, and
+revocation timestamp. Refresh-token rows store digests only, session ID, token
+family ID, generation, issued/expiry/use/revocation timestamps, and replacement
+lineage.
+
+Refresh rotation inserts the replacement token and consumes the expected current
+token in one transaction using constrained SQL update semantics. The update
+requires the expected session ID, digest, generation, unused/unrevoked token
+state, and active session state. Stale rotation attempts raise a sanitized
+application conflict. Revoke-one and revoke-all mark sessions and current
+refresh credentials revoked without committing implicitly.

@@ -10,6 +10,8 @@ from workflowforge_domain.identity.errors import (
     InvalidMembershipTransition,
     InvalidOrganizationName,
     InvalidOrganizationSlug,
+    InvalidRefreshTokenState,
+    InvalidSessionState,
     InvalidTimestamp,
     LastActiveOwnerViolation,
     MembershipAlreadyRemoved,
@@ -18,6 +20,14 @@ from workflowforge_domain.identity.permissions import permissions_for_role
 from workflowforge_domain.identity.policies import (
     MembershipMutation,
     MembershipPolicy,
+)
+from workflowforge_domain.identity.sessions import (
+    AuthSession,
+    RefreshTokenDigest,
+    RefreshTokenFamilyId,
+    RefreshTokenId,
+    RefreshTokenRecord,
+    SessionId,
 )
 from workflowforge_domain.identity.value_objects import (
     EmailAddress,
@@ -33,6 +43,8 @@ __all__ = [
     "InvalidMembershipTransition",
     "InvalidOrganizationName",
     "InvalidOrganizationSlug",
+    "InvalidRefreshTokenState",
+    "InvalidSessionState",
     "InvalidTimestamp",
     "LastActiveOwnerViolation",
     "Membership",
@@ -43,7 +55,13 @@ __all__ = [
     "Organization",
     "OrganizationSlug",
     "Permission",
+    "RefreshTokenDigest",
+    "RefreshTokenFamilyId",
+    "RefreshTokenId",
+    "RefreshTokenRecord",
     "Role",
+    "SessionId",
     "User",
+    "AuthSession",
     "permissions_for_role",
 ]

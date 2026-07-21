@@ -8,34 +8,49 @@ import pytest
 from sqlalchemy import Table
 from workflowforge_application.identity import PasswordCredential
 from workflowforge_domain.identity import (
+    AuthSession,
     EmailAddress,
     InvalidTimestamp,
     Membership,
     Organization,
     OrganizationSlug,
+    RefreshTokenDigest,
+    RefreshTokenFamilyId,
+    RefreshTokenId,
+    RefreshTokenRecord,
     Role,
+    SessionId,
     User,
 )
 from workflowforge_infrastructure.identity.models import (
+    AuthSessionRecord,
     MembershipRecord,
     OrganizationRecord,
     PasswordCredentialRecord,
+    RefreshTokenRecordModel,
     UserRecord,
 )
 from workflowforge_infrastructure.identity.repository import (
+    _auth_session_from_record,
     _membership_from_record,
     _organization_from_record,
     _password_credential_from_record,
+    _record_from_auth_session,
     _record_from_membership,
     _record_from_organization,
     _record_from_password_credential,
+    _record_from_refresh_token,
     _record_from_user,
+    _refresh_token_from_record,
     _user_from_record,
 )
 
 USER_ID = UUID("11111111-1111-4111-8111-111111111111")
 ORGANIZATION_ID = UUID("22222222-2222-4222-8222-222222222222")
 MEMBERSHIP_ID = UUID("33333333-3333-4333-8333-333333333333")
+SESSION_ID = UUID("44444444-4444-4444-8444-444444444444")
+TOKEN_ID = UUID("55555555-5555-4555-8555-555555555555")
+FAMILY_ID = UUID("66666666-6666-4666-8666-666666666666")
 NOW = datetime(2026, 1, 2, 3, 4, 5, tzinfo=UTC)
 
 
@@ -91,6 +106,29 @@ def test_password_credential_record_mapping_round_trips_without_repr_leak() -> N
     assert "stored-secret" not in repr(mapped)
 
 
+def test_auth_session_record_mapping_round_trips_domain_values() -> None:
+    session = _auth_session()
+
+    record = _record_from_auth_session(session)
+    mapped = _auth_session_from_record(record)
+
+    assert isinstance(record, AuthSessionRecord)
+    assert record.user_id == USER_ID
+    assert mapped == session
+
+
+def test_refresh_token_record_mapping_round_trips_without_digest_repr_leak() -> None:
+    token = _refresh_token()
+
+    record = _record_from_refresh_token(token)
+    mapped = _refresh_token_from_record(record)
+
+    assert isinstance(record, RefreshTokenRecordModel)
+    assert record.token_hash == "a" * 64
+    assert mapped == token
+    assert "a" * 64 not in repr(mapped)
+
+
 def test_identity_tables_define_expected_constraints_and_indexes() -> None:
     assert UserRecord.__table__.c.normalized_email.unique is True
     assert UserRecord.__table__.c.normalized_email.index is True
@@ -105,6 +143,8 @@ def test_identity_tables_define_expected_constraints_and_indexes() -> None:
 
     assert PasswordCredentialRecord.__table__.c.user_id.primary_key is True
     assert PasswordCredentialRecord.__table__.c.password_hash.nullable is False
+    assert AuthSessionRecord.__table__.c.user_id.nullable is False
+    assert RefreshTokenRecordModel.__table__.c.token_hash.unique is None
     assert "uq_memberships_organization_user" in unique_constraints
     assert "ix_memberships_organization_id" in indexes
     assert "ix_memberships_user_id" in indexes
@@ -154,4 +194,24 @@ def _membership() -> Membership:
         organization_id=ORGANIZATION_ID,
         role=Role.OWNER,
         now=NOW,
+    )
+
+
+def _auth_session() -> AuthSession:
+    return AuthSession.create(
+        id=SessionId(SESSION_ID),
+        user_id=USER_ID,
+        now=NOW,
+        expires_at=NOW.replace(hour=4),
+    )
+
+
+def _refresh_token() -> RefreshTokenRecord:
+    return RefreshTokenRecord.issue_initial(
+        id=RefreshTokenId(TOKEN_ID),
+        session_id=SessionId(SESSION_ID),
+        token_family_id=RefreshTokenFamilyId(FAMILY_ID),
+        token_digest=RefreshTokenDigest("a" * 64),
+        issued_at=NOW,
+        expires_at=NOW.replace(hour=4),
     )

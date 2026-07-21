@@ -1,7 +1,7 @@
 """Password hasher adapter tests."""
 
 import pytest
-from workflowforge_infrastructure.identity import Argon2PasswordHasher
+from workflowforge_infrastructure.identity import Argon2PasswordHasher, Sha256RefreshTokenHasher
 
 
 def test_argon2id_hasher_hashes_and_verifies_passwords() -> None:
@@ -40,3 +40,18 @@ def test_argon2id_hasher_exposes_dummy_hash_and_rehash_check() -> None:
     assert hasher.dummy_password_hash().startswith("$argon2id$")
     assert hasher.verify_password("anything", hasher.dummy_password_hash()) is False
     assert hasher.needs_rehash("not-a-hash") is False
+
+
+def test_sha256_refresh_token_hasher_digests_and_verifies_without_repr_leak() -> None:
+    hasher = Sha256RefreshTokenHasher()
+    plain_token = "high-entropy-refresh-token"
+
+    digest = hasher.digest_token(plain_token)
+
+    assert digest.value == hasher.digest_token(plain_token).value
+    assert digest.value != plain_token
+    assert len(digest.value) == 64
+    assert hasher.verify_token(plain_token, digest) is True
+    assert hasher.verify_token("wrong-token", digest) is False
+    assert plain_token not in repr(hasher)
+    assert digest.value not in repr(digest)

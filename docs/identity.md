@@ -81,18 +81,31 @@ Provider-specific transformations, including Gmail dot removal or plus-address r
 
 Refresh tokens are cryptographically random opaque values. The raw token is returned only to the client through the appropriate cookie flow and is never persisted.
 
-Persisted refresh-token records store:
+WorkflowForge persists tenant-independent authenticated sessions in
+`auth_sessions`. A user may have multiple sessions, and each session has
+creation, update, expiry, and revocation timestamps. Deleting a user cascades to
+sessions and refresh-token records so hard-deleted identities do not leave
+orphaned authentication material.
+
+Persisted refresh-token records live in `refresh_tokens` and store:
 
 - SHA-256 digest of the token.
 - Session ID.
 - Token family ID.
+- Generation number.
 - Issued timestamp.
 - Expiry timestamp.
 - Used timestamp.
 - Revoked timestamp.
 - Replaced-by token reference.
 
-Refresh rotation must be atomic: consuming the current refresh token and issuing the replacement happen in one transaction. Reuse of an already-used, revoked, expired, or superseded refresh token is treated as suspicious and revokes the token family. Family revocation invalidates all refresh tokens in the family and prevents further rotation.
+Refresh rotation is represented by consuming the current generation and inserting
+the replacement generation in one repository operation. The old record receives
+`used_at` and `replaced_by_token_id`, while the new record keeps the same token
+family and advances generation by one. Reuse of an already-used, revoked,
+expired, or superseded refresh token can be detected because the digest remains
+durable as a non-current lineage record. Later refresh use cases will decide how
+to map replay detection to session or family revocation.
 
 ## Registration And Bootstrap
 

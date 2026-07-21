@@ -41,3 +41,11 @@ class MembershipAlreadyRemoved(InvalidMembershipTransition):
 
 class LastActiveOwnerViolation(IdentityDomainError):
     """Raised when a mutation would remove the final active owner."""
+
+
+class InvalidSessionState(IdentityDomainError):
+    """Raised when authenticated-session state is invalid."""
+
+
+class InvalidRefreshTokenState(IdentityDomainError):
+    """Raised when refresh-token rotation state is invalid."""

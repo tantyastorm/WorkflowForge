@@ -43,14 +43,16 @@ def test_migrations_upgrade_from_empty_downgrade_and_reupgrade() -> None:
         assert table_names == {
             "alembic_version",
             "documents",
+            "auth_sessions",
             "memberships",
             "organizations",
             "password_credentials",
+            "refresh_tokens",
             "users",
         }
         with engine.connect() as connection:
             version_rows = connection.exec_driver_sql("SELECT version_num FROM alembic_version")
-            assert version_rows.scalar_one() == "0005_password_credentials"
+            assert version_rows.scalar_one() == "0006_sessions"
     finally:
         engine.dispose()
 
@@ -208,6 +210,84 @@ def test_password_credentials_table_has_expected_columns_and_constraints_at_head
         for foreign_key in foreign_keys
     } == {("users", ("user_id",))}
     assert foreign_keys[0]["options"].get("ondelete") == "CASCADE"
+
+
+@pytest.mark.integration
+def test_session_tables_have_expected_columns_constraints_and_indexes_at_head() -> None:
+    settings = require_postgresql()
+    command.upgrade(_alembic_config(settings), "head")
+
+    engine = create_sync_migration_engine(settings)
+    try:
+        inspector = inspect(engine)
+        session_columns = {
+            column["name"]: column for column in inspector.get_columns("auth_sessions")
+        }
+        token_columns = {
+            column["name"]: column for column in inspector.get_columns("refresh_tokens")
+        }
+        session_checks = {
+            constraint["name"] for constraint in inspector.get_check_constraints("auth_sessions")
+        }
+        token_checks = {
+            constraint["name"] for constraint in inspector.get_check_constraints("refresh_tokens")
+        }
+        token_unique_constraints = {
+            constraint["name"] for constraint in inspector.get_unique_constraints("refresh_tokens")
+        }
+        session_indexes = {index["name"] for index in inspector.get_indexes("auth_sessions")}
+        token_indexes = {index["name"] for index in inspector.get_indexes("refresh_tokens")}
+        session_foreign_keys = inspector.get_foreign_keys("auth_sessions")
+        token_foreign_keys = inspector.get_foreign_keys("refresh_tokens")
+    finally:
+        engine.dispose()
+
+    assert set(session_columns) == {
+        "id",
+        "user_id",
+        "created_at",
+        "updated_at",
+        "expires_at",
+        "revoked_at",
+    }
+    assert set(token_columns) == {
+        "id",
+        "session_id",
+        "token_family_id",
+        "token_hash",
+        "generation",
+        "issued_at",
+        "expires_at",
+        "used_at",
+        "revoked_at",
+        "replaced_by_token_id",
+    }
+    assert session_columns["user_id"]["nullable"] is False
+    assert token_columns["token_hash"]["nullable"] is False
+    assert token_columns["generation"]["nullable"] is False
+    assert "ck_auth_sessions_expires_after_created" in session_checks
+    assert "ck_auth_sessions_updated_after_created" in session_checks
+    assert "ck_auth_sessions_revoked_after_created" in session_checks
+    assert "ck_refresh_tokens_generation_non_negative" in token_checks
+    assert "ck_refresh_tokens_expires_after_issued" in token_checks
+    assert "ck_refresh_tokens_used_after_issued" in token_checks
+    assert "ck_refresh_tokens_revoked_after_issued" in token_checks
+    assert "uq_refresh_tokens_token_hash" in token_unique_constraints
+    assert "uq_refresh_tokens_session_generation" in token_unique_constraints
+    assert "ix_auth_sessions_user_id" in session_indexes
+    assert "ix_auth_sessions_user_revoked_expires" in session_indexes
+    assert "ix_refresh_tokens_session_id" in token_indexes
+    assert "ix_refresh_tokens_token_family_id" in token_indexes
+    assert "ix_refresh_tokens_session_current" in token_indexes
+    assert {
+        (foreign_key["referred_table"], tuple(foreign_key["constrained_columns"]))
+        for foreign_key in session_foreign_keys
+    } == {("users", ("user_id",))}
+    assert any(
+        foreign_key["referred_table"] == "auth_sessions"
+        and foreign_key["options"].get("ondelete") == "CASCADE"
+        for foreign_key in token_foreign_keys
+    )
 
 
 @pytest.mark.integration

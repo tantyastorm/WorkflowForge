@@ -12,16 +12,24 @@ from workflowforge_application.identity import (
     DuplicateNormalizedEmailError,
     DuplicateOrganizationMembershipError,
     DuplicateOrganizationSlugError,
+    DuplicateRefreshTokenDigestError,
     MissingIdentityReferenceError,
     PasswordCredential,
+    RefreshRotationConflictError,
 )
 from workflowforge_domain.identity import (
+    AuthSession,
     EmailAddress,
     Membership,
     MembershipStatus,
     Organization,
     OrganizationSlug,
+    RefreshTokenDigest,
+    RefreshTokenFamilyId,
+    RefreshTokenId,
+    RefreshTokenRecord,
     Role,
+    SessionId,
     User,
 )
 from workflowforge_infrastructure.database import (
@@ -33,6 +41,7 @@ from workflowforge_infrastructure.identity import (
     SqlAlchemyMembershipRepository,
     SqlAlchemyOrganizationRepository,
     SqlAlchemyPasswordCredentialRepository,
+    SqlAlchemySessionRepository,
     SqlAlchemyUserRepository,
 )
 from workflowforge_infrastructure.identity.models import UserRecord
@@ -46,6 +55,19 @@ ORGANIZATION_ID = UUID("22222222-2222-4222-8222-222222222222")
 SECOND_ORGANIZATION_ID = UUID("22222222-2222-4222-8222-333333333333")
 MEMBERSHIP_ID = UUID("33333333-3333-4333-8333-333333333333")
 SECOND_MEMBERSHIP_ID = UUID("33333333-3333-4333-8333-444444444444")
+SESSION_ID = UUID("44444444-4444-4444-8444-444444444444")
+SECOND_SESSION_ID = UUID("44444444-4444-4444-8444-555555555555")
+OTHER_USER_SESSION_ID = UUID("44444444-4444-4444-8444-666666666666")
+TOKEN_ID = UUID("55555555-5555-4555-8555-555555555555")
+SECOND_TOKEN_ID = UUID("55555555-5555-4555-8555-666666666666")
+OTHER_TOKEN_ID = UUID("55555555-5555-4555-8555-777777777777")
+REPLACEMENT_TOKEN_ID = UUID("55555555-5555-4555-8555-888888888888")
+FAMILY_ID = UUID("66666666-6666-4666-8666-666666666666")
+SECOND_FAMILY_ID = UUID("66666666-6666-4666-8666-777777777777")
+DIGEST = "a" * 64
+SECOND_DIGEST = "b" * 64
+OTHER_DIGEST = "c" * 64
+REPLACEMENT_DIGEST = "d" * 64
 
 
 @pytest.mark.integration
@@ -162,6 +184,249 @@ async def test_password_credential_repository_missing_user_rolls_back() -> None:
             )
 
         assert await credential_repo.get_by_user_id(USER_ID) is None
+    finally:
+        await session.close()
+        await dispose_async_engine(engine)
+
+
+@pytest.mark.integration
+async def test_session_repository_create_lookup_multiple_sessions_and_duplicate_digest() -> None:
+    engine, session = await _session()
+
+    try:
+        user_repo = SqlAlchemyUserRepository(session)
+        session_repo = SqlAlchemySessionRepository(session)
+        await user_repo.add(_user())
+
+        first = _auth_session()
+        second = _auth_session(session_id=SECOND_SESSION_ID)
+        await session_repo.add(session=first, refresh_token=_refresh_token())
+        await session_repo.add(
+            session=second,
+            refresh_token=_refresh_token(
+                token_id=SECOND_TOKEN_ID,
+                session_id=SECOND_SESSION_ID,
+                family_id=SECOND_FAMILY_ID,
+                digest=SECOND_DIGEST,
+            ),
+        )
+        await session.commit()
+
+        assert await session_repo.get_by_id(SessionId(SESSION_ID)) == first
+        assert await session_repo.get_active_by_id(SessionId(SESSION_ID), at=NOW) == first
+        assert (
+            await session_repo.get_refresh_token_by_digest(RefreshTokenDigest(DIGEST))
+            == _refresh_token()
+        )
+
+        duplicate = _auth_session(session_id=UUID("44444444-4444-4444-8444-777777777777"))
+        with pytest.raises(DuplicateRefreshTokenDigestError):
+            await session_repo.add(
+                session=duplicate,
+                refresh_token=_refresh_token(
+                    token_id=OTHER_TOKEN_ID,
+                    session_id=duplicate.id.value,
+                    family_id=UUID("66666666-6666-4666-8666-888888888888"),
+                    digest=DIGEST,
+                ),
+            )
+    finally:
+        await session.close()
+        await dispose_async_engine(engine)
+
+
+@pytest.mark.integration
+async def test_session_repository_revoke_one_and_revoke_all_for_user() -> None:
+    engine, session = await _session()
+
+    try:
+        user_repo = SqlAlchemyUserRepository(session)
+        session_repo = SqlAlchemySessionRepository(session)
+        await user_repo.add(_user())
+        await user_repo.add(
+            _user(
+                user_id=SECOND_USER_ID,
+                email="grace@example.com",
+                display_name="Grace Hopper",
+            )
+        )
+        await session_repo.add(session=_auth_session(), refresh_token=_refresh_token())
+        await session_repo.add(
+            session=_auth_session(session_id=SECOND_SESSION_ID),
+            refresh_token=_refresh_token(
+                token_id=SECOND_TOKEN_ID,
+                session_id=SECOND_SESSION_ID,
+                family_id=SECOND_FAMILY_ID,
+                digest=SECOND_DIGEST,
+            ),
+        )
+        other_user_session = _auth_session(
+            session_id=OTHER_USER_SESSION_ID,
+            user_id=SECOND_USER_ID,
+        )
+        await session_repo.add(
+            session=other_user_session,
+            refresh_token=_refresh_token(
+                token_id=OTHER_TOKEN_ID,
+                session_id=OTHER_USER_SESSION_ID,
+                family_id=UUID("66666666-6666-4666-8666-999999999999"),
+                digest=OTHER_DIGEST,
+            ),
+        )
+        await session.commit()
+
+        revoked = await session_repo.revoke(
+            SessionId(SESSION_ID),
+            revoked_at=NOW + timedelta(minutes=1),
+        )
+        assert revoked.revoked_at == NOW + timedelta(minutes=1)
+        assert await session_repo.get_active_by_id(SessionId(SESSION_ID), at=NOW) is None
+
+        affected = await session_repo.revoke_all_for_user(
+            USER_ID,
+            revoked_at=NOW + timedelta(minutes=2),
+        )
+        await session.commit()
+
+        assert affected == 1
+        assert await session_repo.get_active_by_id(SessionId(SECOND_SESSION_ID), at=NOW) is None
+        assert (
+            await session_repo.get_active_by_id(SessionId(OTHER_USER_SESSION_ID), at=NOW)
+            == other_user_session
+        )
+    finally:
+        await session.close()
+        await dispose_async_engine(engine)
+
+
+@pytest.mark.integration
+async def test_session_repository_refresh_rotation_is_compare_and_swap_safe() -> None:
+    engine, session = await _session()
+
+    try:
+        user_repo = SqlAlchemyUserRepository(session)
+        session_repo = SqlAlchemySessionRepository(session)
+        await user_repo.add(_user())
+        await session_repo.add(session=_auth_session(), refresh_token=_refresh_token())
+        await session.commit()
+
+        replacement = _refresh_token(
+            token_id=REPLACEMENT_TOKEN_ID,
+            digest=REPLACEMENT_DIGEST,
+            generation=1,
+            issued_at=NOW + timedelta(minutes=5),
+            expires_at=NOW + timedelta(hours=2),
+        )
+        rotated = await session_repo.rotate_refresh_token(
+            session_id=SessionId(SESSION_ID),
+            expected_digest=RefreshTokenDigest(DIGEST),
+            expected_generation=0,
+            replacement=replacement,
+            rotated_at=NOW + timedelta(minutes=5),
+        )
+        await session.commit()
+
+        assert rotated == replacement
+        consumed = await session_repo.get_refresh_token_by_digest(RefreshTokenDigest(DIGEST))
+        assert consumed is not None
+        assert consumed.used_at == NOW + timedelta(minutes=5)
+        assert consumed.replaced_by_token_id == RefreshTokenId(REPLACEMENT_TOKEN_ID)
+
+        with pytest.raises(RefreshRotationConflictError):
+            await session_repo.rotate_refresh_token(
+                session_id=SessionId(SESSION_ID),
+                expected_digest=RefreshTokenDigest(DIGEST),
+                expected_generation=0,
+                replacement=_refresh_token(
+                    token_id=UUID("55555555-5555-4555-8555-999999999999"),
+                    digest="e" * 64,
+                    generation=1,
+                    issued_at=NOW + timedelta(minutes=6),
+                    expires_at=NOW + timedelta(hours=2),
+                ),
+                rotated_at=NOW + timedelta(minutes=6),
+            )
+    finally:
+        await session.close()
+        await dispose_async_engine(engine)
+
+
+@pytest.mark.integration
+async def test_session_repository_expired_and_revoked_sessions_cannot_rotate() -> None:
+    engine, session = await _session()
+
+    try:
+        user_repo = SqlAlchemyUserRepository(session)
+        session_repo = SqlAlchemySessionRepository(session)
+        await user_repo.add(_user())
+        expired = _auth_session(
+            expires_at=NOW + timedelta(minutes=1),
+        )
+        await session_repo.add(session=expired, refresh_token=_refresh_token())
+        await session.commit()
+
+        with pytest.raises(RefreshRotationConflictError):
+            await session_repo.rotate_refresh_token(
+                session_id=SessionId(SESSION_ID),
+                expected_digest=RefreshTokenDigest(DIGEST),
+                expected_generation=0,
+                replacement=_refresh_token(
+                    token_id=REPLACEMENT_TOKEN_ID,
+                    digest=REPLACEMENT_DIGEST,
+                    generation=1,
+                    issued_at=NOW + timedelta(minutes=2),
+                    expires_at=NOW + timedelta(hours=2),
+                ),
+                rotated_at=NOW + timedelta(minutes=2),
+            )
+
+        await session.rollback()
+        await session_repo.revoke(SessionId(SESSION_ID), revoked_at=NOW + timedelta(seconds=30))
+        await session.commit()
+
+        with pytest.raises(RefreshRotationConflictError):
+            await session_repo.rotate_refresh_token(
+                session_id=SessionId(SESSION_ID),
+                expected_digest=RefreshTokenDigest(DIGEST),
+                expected_generation=0,
+                replacement=_refresh_token(
+                    token_id=REPLACEMENT_TOKEN_ID,
+                    digest=REPLACEMENT_DIGEST,
+                    generation=1,
+                    issued_at=NOW + timedelta(seconds=40),
+                    expires_at=NOW + timedelta(hours=2),
+                ),
+                rotated_at=NOW + timedelta(seconds=40),
+            )
+    finally:
+        await session.close()
+        await dispose_async_engine(engine)
+
+
+@pytest.mark.integration
+async def test_session_repository_transaction_rollback_and_user_delete_cascade() -> None:
+    engine, session = await _session()
+
+    try:
+        user_repo = SqlAlchemyUserRepository(session)
+        session_repo = SqlAlchemySessionRepository(session)
+        user = await user_repo.add(_user())
+        await session_repo.add(session=_auth_session(), refresh_token=_refresh_token())
+
+        await session.rollback()
+        assert await session_repo.get_by_id(SessionId(SESSION_ID)) is None
+
+        await user_repo.add(user)
+        await session_repo.add(session=_auth_session(), refresh_token=_refresh_token())
+        await session.commit()
+
+        user_record = await session.get(UserRecord, user.id)
+        assert user_record is not None
+        await session.delete(user_record)
+        await session.commit()
+
+        assert await session_repo.get_by_id(SessionId(SESSION_ID)) is None
+        assert await session_repo.get_refresh_token_by_digest(RefreshTokenDigest(DIGEST)) is None
     finally:
         await session.close()
         await dispose_async_engine(engine)
@@ -356,6 +621,41 @@ def _active_membership(
         organization_id=organization_id,
         role=role,
         now=NOW,
+    )
+
+
+def _auth_session(
+    *,
+    session_id: UUID = SESSION_ID,
+    user_id: UUID = USER_ID,
+    expires_at: datetime = NOW + timedelta(hours=1),
+) -> AuthSession:
+    return AuthSession.create(
+        id=SessionId(session_id),
+        user_id=user_id,
+        now=NOW,
+        expires_at=expires_at,
+    )
+
+
+def _refresh_token(
+    *,
+    token_id: UUID = TOKEN_ID,
+    session_id: UUID = SESSION_ID,
+    family_id: UUID = FAMILY_ID,
+    digest: str = DIGEST,
+    generation: int = 0,
+    issued_at: datetime = NOW,
+    expires_at: datetime = NOW + timedelta(hours=1),
+) -> RefreshTokenRecord:
+    return RefreshTokenRecord(
+        id=RefreshTokenId(token_id),
+        session_id=SessionId(session_id),
+        token_family_id=RefreshTokenFamilyId(family_id),
+        token_digest=RefreshTokenDigest(digest),
+        generation=generation,
+        issued_at=issued_at,
+        expires_at=expires_at,
     )
 
 
