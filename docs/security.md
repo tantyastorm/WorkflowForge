@@ -1,6 +1,6 @@
 # Security
 
-This document records the planned WorkflowForge security foundation for Phase 2. It is architectural documentation, not an implementation record.
+This document records the WorkflowForge security foundation for Phase 2.
 
 ## Security Principles
 
@@ -106,14 +106,50 @@ or token is issued by the password authentication use case.
 
 ## Rate Limiting
 
-WorkflowForge plans Redis-backed rate limiting for:
+WorkflowForge uses Redis-backed fixed-window rate limiting for authentication
+endpoints:
 
-- Login.
-- Registration.
-- Refresh.
-- Membership invitations.
+- Login is limited by normalized email identifier and client address before
+  password verification.
+- Refresh is limited by client address before refresh-token lookup.
 
-PostgreSQL remains the source of truth for users, sessions, memberships, and refresh-token records. Redis stores rate-limit counters and transient coordination only.
+Counters are keyed with SHA-256 digests and never include raw email addresses or
+raw client addresses. Counter increments and expiry assignment run through one
+Redis Lua script so a failed process cannot leave a new counter without a TTL.
+Successful login and refresh clear the corresponding failure counters.
+
+Development defaults to fail-open behavior when Redis is unavailable so local
+work is not blocked by transient infrastructure failures. Production settings
+must use fail-closed rate limiting. Rate-limited and fail-closed backend
+failures return `429` with `Retry-After` and emit audit events.
+
+PostgreSQL remains the source of truth for users, sessions, memberships, and
+refresh-token records. Redis stores rate-limit counters and transient
+coordination only.
+
+## Session Cleanup
+
+Expired refresh-token rows and old inactive sessions are cleaned by the
+`security.sessions.cleanup` Celery task. The task is registered on workers by
+default. Celery Beat schedules it only when
+`WORKFLOWFORGE_CLEANUP_SCHEDULE_ENABLED=true`.
+
+Cleanup runs in bounded batches, deletes expired refresh tokens first, deletes
+expired sessions after the configured expired-session retention, and deletes
+revoked sessions after the configured revoked-session retention. Audit rows
+preserve nullable session references through database constraints rather than
+blocking cleanup.
+
+## HTTP Security Headers
+
+API responses include:
+
+- `X-Content-Type-Options: nosniff`
+- `Referrer-Policy: no-referrer`
+- `X-Frame-Options: DENY`
+
+Production responses also include
+`Strict-Transport-Security: max-age=31536000; includeSubDomains`.
 
 ## HTTP Error Policy
 
@@ -149,7 +185,29 @@ partitioning, and archival are deferred.
 
 ## Local Development
 
-Local development may enable registration with `WORKFLOWFORGE_AUTH_REGISTRATION_ENABLED`. Production defaults registration to disabled and uses a future CLI bootstrap command for initial setup. WorkflowForge must not provide default admin credentials.
+WorkflowForge does not expose public registration in Phase 2 and must not ship
+default admin credentials. Initial setup uses the CLI command:
+
+```shell
+workflowforge-bootstrap-owner --email owner@example.com --display-name "Owner" --organization-name "Example" --organization-slug example --password-from-env
+```
+
+The command reads `WORKFLOWFORGE_BOOTSTRAP_OWNER_PASSWORD` only when
+`--password-from-env` is supplied; otherwise it prompts with hidden input and
+confirmation. The password is never accepted as a positional command-line
+argument and is not printed.
+
+Bootstrap takes a transaction-scoped PostgreSQL advisory lock, then refuses if
+any user or organization already exists. A successful bootstrap creates the
+first active owner, organization, membership, password credential, and audit row
+in one transaction. A refused bootstrap records `bootstrap.refused` and exits
+without creating identity state.
+
+Production configuration is intentionally strict: debug mode must be disabled,
+the JWT signing secret must differ from the development default, refresh cookies
+must be Secure, PostgreSQL and Redis passwords must be configured, rate limiting
+must fail closed, access tokens may not exceed one hour, and sessions may not
+exceed 90 days.
 
 ## Architecture Boundaries
 

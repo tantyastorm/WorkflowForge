@@ -35,13 +35,18 @@ Phase 2 records the smallest useful identity and authorization taxonomy:
 
 - `authentication.login_succeeded`
 - `authentication.login_failed`
+- `authentication.login_rate_limited`
 - `authentication.access_token_rejected`
 - `session.created`
 - `session.refreshed`
 - `session.refresh_failed`
+- `session.refresh_rate_limited`
 - `session.refresh_replay_detected`
 - `session.revoked`
 - `session.revoked_all`
+- `bootstrap.owner_created`
+- `bootstrap.refused`
+- `security.rate_limit_backend_unavailable`
 - `tenancy.access_denied`
 - `tenancy.inactive_membership`
 - `tenancy.inactive_organization`
@@ -57,7 +62,7 @@ Outcomes are queryable separately from event names: `success`, `failure`, `denie
 
 Security-significant successful state changes record audit rows in the same transaction as the business state. Login session creation, refresh rotation, replay revocation, logout, logout-all, and password credential changes use this strategy so audit and state do not contradict each other.
 
-Failure and denial events that have no successful business transaction use a dedicated audit transaction. Login failures, refresh failures, rejected access tokens, tenant denials, inactive tenant state, and permission denials are committed independently so they survive the failed request when audit persistence is available.
+Failure and denial events that have no successful business transaction use a dedicated audit transaction. Login failures, refresh failures, rate-limit denials, rejected access tokens, tenant denials, inactive tenant state, and permission denials are committed independently so they survive the failed request when audit persistence is available.
 
 Same-transaction audit persistence failures are translated to `AuditPersistenceError` and roll back the owning business transaction. Independent failure-event audit persistence failures are best-effort: they are logged structurally with request correlation context and do not replace the original public `401` or `403` response. Phase 2 does not silently discard durable audit failures, and it does not add Kafka, Redis streams, or an outbox subsystem.
 

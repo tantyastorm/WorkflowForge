@@ -6,9 +6,12 @@ from workflowforge_infrastructure.config.settings import (
     ApiSettings,
     AuthSettings,
     CelerySettings,
+    CleanupSettings,
     Environment,
     LogFormat,
     LogLevel,
+    RateLimitFailurePolicy,
+    RateLimitSettings,
     RedisSettings,
     S3Settings,
     SchedulerSettings,
@@ -80,6 +83,17 @@ def test_settings_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
     assert settings.scheduler.heartbeat_interval_seconds == 30
     assert settings.scheduler.heartbeat_ttl_seconds == 90
     assert settings.scheduler.heartbeat_key == "workflowforge:diagnostics:scheduler:last_seen"
+    assert settings.rate_limit.login_identifier_threshold == 5
+    assert settings.rate_limit.login_client_threshold == 20
+    assert settings.rate_limit.login_window_seconds == 900
+    assert settings.rate_limit.refresh_client_threshold == 10
+    assert settings.rate_limit.refresh_window_seconds == 300
+    assert settings.rate_limit.failure_policy is RateLimitFailurePolicy.OPEN
+    assert settings.cleanup.session_batch_limit == 500
+    assert settings.cleanup.expired_session_retention_seconds == 604_800
+    assert settings.cleanup.revoked_session_retention_seconds == 2_592_000
+    assert settings.cleanup.schedule_enabled is False
+    assert settings.cleanup.schedule_seconds == 3600
     assert settings.auth.jwt_algorithm == "HS256"
     assert settings.auth.jwt_issuer == "workflowforge"
     assert settings.auth.jwt_audience == "workflowforge-api"
@@ -326,6 +340,76 @@ def test_scheduler_heartbeat_ttl_must_exceed_interval() -> None:
         SchedulerSettings(heartbeat_interval_seconds=10, heartbeat_ttl_seconds=10)
 
 
+def test_rate_limit_settings_environment_overrides(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("WORKFLOWFORGE_RATE_LIMIT_LOGIN_IDENTIFIER_THRESHOLD", "3")
+    monkeypatch.setenv("WORKFLOWFORGE_RATE_LIMIT_LOGIN_CLIENT_THRESHOLD", "7")
+    monkeypatch.setenv("WORKFLOWFORGE_RATE_LIMIT_LOGIN_WINDOW_SECONDS", "60")
+    monkeypatch.setenv("WORKFLOWFORGE_RATE_LIMIT_REFRESH_CLIENT_THRESHOLD", "4")
+    monkeypatch.setenv("WORKFLOWFORGE_RATE_LIMIT_REFRESH_WINDOW_SECONDS", "30")
+    monkeypatch.setenv("WORKFLOWFORGE_RATE_LIMIT_FAILURE_POLICY", "closed")
+
+    settings = Settings()
+
+    assert settings.rate_limit.login_identifier_threshold == 3
+    assert settings.rate_limit.login_client_threshold == 7
+    assert settings.rate_limit.login_window_seconds == 60
+    assert settings.rate_limit.refresh_client_threshold == 4
+    assert settings.rate_limit.refresh_window_seconds == 30
+    assert settings.rate_limit.failure_policy is RateLimitFailurePolicy.CLOSED
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("login_identifier_threshold", 0),
+        ("login_identifier_threshold", 101),
+        ("login_client_threshold", 0),
+        ("login_client_threshold", 501),
+        ("login_window_seconds", 0),
+        ("login_window_seconds", 86_401),
+        ("refresh_client_threshold", 0),
+        ("refresh_client_threshold", 501),
+        ("refresh_window_seconds", 0),
+        ("refresh_window_seconds", 86_401),
+        ("failure_policy", "sideways"),
+    ],
+)
+def test_rate_limit_settings_reject_invalid_values(field: str, value: object) -> None:
+    with pytest.raises(ValidationError):
+        RateLimitSettings.model_validate({field: value})
+
+
+def test_cleanup_settings_environment_overrides(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("WORKFLOWFORGE_CLEANUP_SESSION_BATCH_LIMIT", "250")
+    monkeypatch.setenv("WORKFLOWFORGE_CLEANUP_EXPIRED_SESSION_RETENTION_SECONDS", "3600")
+    monkeypatch.setenv("WORKFLOWFORGE_CLEANUP_REVOKED_SESSION_RETENTION_SECONDS", "7200")
+    monkeypatch.setenv("WORKFLOWFORGE_CLEANUP_SCHEDULE_ENABLED", "true")
+    monkeypatch.setenv("WORKFLOWFORGE_CLEANUP_SCHEDULE_SECONDS", "600")
+
+    settings = Settings()
+
+    assert settings.cleanup.session_batch_limit == 250
+    assert settings.cleanup.expired_session_retention_seconds == 3600
+    assert settings.cleanup.revoked_session_retention_seconds == 7200
+    assert settings.cleanup.schedule_enabled is True
+    assert settings.cleanup.schedule_seconds == 600
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("session_batch_limit", 0),
+        ("session_batch_limit", 10_001),
+        ("expired_session_retention_seconds", -1),
+        ("revoked_session_retention_seconds", -1),
+        ("schedule_seconds", 0),
+    ],
+)
+def test_cleanup_settings_reject_invalid_values(field: str, value: object) -> None:
+    with pytest.raises(ValidationError):
+        CleanupSettings.model_validate({field: value})
+
+
 def test_auth_settings_environment_overrides(monkeypatch: pytest.MonkeyPatch) -> None:
     clear_auth_environment(monkeypatch)
     monkeypatch.setenv("WORKFLOWFORGE_AUTH_JWT_ISSUER", "issuer")
@@ -417,6 +501,57 @@ def test_production_requires_secure_refresh_cookie(monkeypatch: pytest.MonkeyPat
         Settings()
 
 
+def test_production_requires_debug_disabled(monkeypatch: pytest.MonkeyPatch) -> None:
+    clear_auth_environment(monkeypatch)
+    _set_minimal_production_environment(monkeypatch)
+    monkeypatch.setenv("WORKFLOWFORGE_DEBUG", "true")
+
+    with pytest.raises(ValidationError, match="debug mode"):
+        Settings()
+
+
+def test_production_requires_database_password(monkeypatch: pytest.MonkeyPatch) -> None:
+    clear_auth_environment(monkeypatch)
+    _set_minimal_production_environment(monkeypatch)
+    monkeypatch.setenv("WORKFLOWFORGE_DATABASE_PASSWORD", "")
+
+    with pytest.raises(ValidationError, match="database password"):
+        Settings()
+
+
+def test_production_requires_redis_authentication(monkeypatch: pytest.MonkeyPatch) -> None:
+    clear_auth_environment(monkeypatch)
+    _set_minimal_production_environment(monkeypatch)
+    monkeypatch.setenv("WORKFLOWFORGE_REDIS_PASSWORD", "")
+
+    with pytest.raises(ValidationError, match="Redis authentication"):
+        Settings()
+
+
+def test_production_requires_fail_closed_rate_limiting(monkeypatch: pytest.MonkeyPatch) -> None:
+    clear_auth_environment(monkeypatch)
+    _set_minimal_production_environment(monkeypatch)
+    monkeypatch.setenv("WORKFLOWFORGE_RATE_LIMIT_FAILURE_POLICY", "open")
+
+    with pytest.raises(ValidationError, match="fail-closed rate limiting"):
+        Settings()
+
+
+def test_production_accepts_hardened_security_configuration(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    clear_auth_environment(monkeypatch)
+    _set_minimal_production_environment(monkeypatch)
+
+    settings = Settings()
+
+    assert settings.environment is Environment.PRODUCTION
+    assert settings.debug is False
+    assert settings.auth.refresh_cookie_secure is True
+    assert settings.redis.password is not None
+    assert settings.rate_limit.failure_policy is RateLimitFailurePolicy.CLOSED
+
+
 def test_settings_reject_invalid_environment(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("WORKFLOWFORGE_ENVIRONMENT", "staging")
 
@@ -473,3 +608,16 @@ def test_nested_settings_ignore_generic_os_environment(
 def clear_auth_environment(monkeypatch: pytest.MonkeyPatch) -> None:
     for variable in AUTH_ENVIRONMENT_VARIABLES:
         monkeypatch.delenv(variable, raising=False)
+
+
+def _set_minimal_production_environment(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("WORKFLOWFORGE_ENVIRONMENT", "production")
+    monkeypatch.setenv("WORKFLOWFORGE_DEBUG", "false")
+    monkeypatch.setenv(
+        "WORKFLOWFORGE_AUTH_JWT_SIGNING_SECRET",
+        "production-secret-with-at-least-32-characters",
+    )
+    monkeypatch.setenv("WORKFLOWFORGE_AUTH_REFRESH_COOKIE_SECURE", "true")
+    monkeypatch.setenv("WORKFLOWFORGE_DATABASE_PASSWORD", "database-secret")
+    monkeypatch.setenv("WORKFLOWFORGE_REDIS_PASSWORD", "redis-secret")
+    monkeypatch.setenv("WORKFLOWFORGE_RATE_LIMIT_FAILURE_POLICY", "closed")

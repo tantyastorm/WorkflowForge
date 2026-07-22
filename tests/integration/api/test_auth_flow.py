@@ -17,7 +17,12 @@ from workflowforge_application.identity import SetUserPassword, SetUserPasswordC
 from workflowforge_domain.audit import AuditEventType
 from workflowforge_domain.identity import EmailAddress, User
 from workflowforge_infrastructure.audit.models import SecurityAuditEventRecord
-from workflowforge_infrastructure.config import Environment, Settings
+from workflowforge_infrastructure.config import (
+    Environment,
+    RateLimitSettings,
+    RedisSettings,
+    Settings,
+)
 from workflowforge_infrastructure.database import (
     create_async_database_engine,
     create_async_session_factory,
@@ -29,6 +34,7 @@ from workflowforge_infrastructure.identity import (
     SqlAlchemyUserRepository,
 )
 from workflowforge_infrastructure.identity.models import AuthSessionRecord
+from workflowforge_infrastructure.redis import close_redis_client, create_redis_client
 
 from tests.integration.database.utils import require_postgresql
 
@@ -226,8 +232,56 @@ def test_invalid_login_audit_persists_after_401_without_session_state() -> None:
     assert _session_count(settings) == 0
 
 
+@pytest.mark.integration
+def test_invalid_login_attempts_are_rate_limited_with_real_redis() -> None:
+    settings = Settings(
+        environment=Environment.TEST,
+        database=require_postgresql(),
+        redis=_redis_settings(),
+        rate_limit=RateLimitSettings(
+            login_identifier_threshold=2,
+            login_client_threshold=20,
+            login_window_seconds=60,
+        ),
+    )
+    _reset_database()
+    _clear_rate_limit_keys(settings)
+    _seed_user(settings)
+    app = create_app(settings)
+
+    try:
+        with TestClient(app) as client:
+            first = client.post(
+                "/api/v1/auth/login",
+                json={"email": "ada@example.com", "password": "wrong password"},
+            )
+            second = client.post(
+                "/api/v1/auth/login",
+                json={"email": "ADA@example.com", "password": "wrong password"},
+            )
+            third = client.post(
+                "/api/v1/auth/login",
+                json={"email": "ada@example.com", "password": "wrong password"},
+            )
+
+        assert first.status_code == 401
+        assert second.status_code == 401
+        assert third.status_code == 429
+        assert third.headers["retry-after"] == "60"
+        assert third.json()["error"]["code"] == "rate_limited"
+        assert "set-cookie" not in third.headers
+        assert _audit_count(settings, AuditEventType.AUTHENTICATION_LOGIN_RATE_LIMITED) == 1
+        assert _session_count(settings) == 0
+    finally:
+        _clear_rate_limit_keys(settings)
+
+
 def _settings() -> Settings:
-    return Settings(environment=Environment.TEST, database=require_postgresql())
+    return Settings(
+        environment=Environment.TEST,
+        database=require_postgresql(),
+        redis=_redis_settings(),
+    )
 
 
 def _reset_database() -> None:
@@ -303,6 +357,31 @@ async def _session_count_async(settings: Settings) -> int:
     finally:
         await session.close()
         await dispose_async_engine(engine)
+
+
+def _redis_settings() -> RedisSettings:
+    import os
+
+    return RedisSettings(
+        host=os.environ.get("WORKFLOWFORGE_TEST_REDIS_HOST", "localhost"),
+        port=int(os.environ.get("WORKFLOWFORGE_TEST_REDIS_HOST_PORT", "6379")),
+    )
+
+
+def _clear_rate_limit_keys(settings: Settings) -> None:
+    import asyncio
+
+    asyncio.run(_clear_rate_limit_keys_async(settings))
+
+
+async def _clear_rate_limit_keys_async(settings: Settings) -> None:
+    client = create_redis_client(settings.redis)
+    try:
+        keys = [str(key) async for key in client.scan_iter("workflowforge:ratelimit:*")]
+        if keys:
+            await client.delete(*keys)
+    finally:
+        await close_redis_client(client)
 
 
 def _alembic_config() -> Config:

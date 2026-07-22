@@ -1,6 +1,6 @@
 # Identity
 
-This document records the planned WorkflowForge identity foundation for Phase 2. It is architectural documentation, not an implementation record.
+This document records the WorkflowForge identity foundation for Phase 2.
 
 ## Goals
 
@@ -135,11 +135,20 @@ remains authentication-only and does not require or return tenant selection.
 
 ## Registration And Bootstrap
 
-Registration is controlled by `WORKFLOWFORGE_AUTH_REGISTRATION_ENABLED`.
+WorkflowForge does not expose public registration in Phase 2. Password reset,
+MFA, invitation acceptance, and frontend authentication UX are separate future
+steps.
 
-Development registration may be enabled. Production registration defaults to disabled. Registration creates a user only; organization creation is a separate operation. The creator of an organization becomes its owner.
+First setup uses `workflowforge-bootstrap-owner`. The command creates exactly
+one user, one organization, one active owner membership, one password
+credential, and the bootstrap audit row in a single application transaction.
+It refuses to run once any user or organization exists.
 
-WorkflowForge will not ship default admin credentials. A CLI bootstrap command for initial production setup is planned later in Phase 2.
+Bootstrap serializes the state check with a transaction-scoped PostgreSQL
+advisory lock so concurrent bootstrap attempts cannot both observe an empty
+identity store. Password input is either hidden interactive input or
+`WORKFLOWFORGE_BOOTSTRAP_OWNER_PASSWORD` when `--password-from-env` is supplied;
+the password is never passed as a positional argument.
 
 ## HTTP Authentication Errors
 
@@ -160,5 +169,5 @@ WorkflowForge should not create a generic `AuthService` that owns identity, sess
 
 Phase 2 persists users with display email, normalized email, display name, active state, and lifecycle timestamps. Normalized email remains the uniqueness key and uses the same `email.strip().casefold()` behavior as the domain value object.
 
-Registration routes, password reset, tenant selection, and frontend
+Registration routes, password reset, MFA, tenant selection, and frontend
 authentication UX remain outside this step.

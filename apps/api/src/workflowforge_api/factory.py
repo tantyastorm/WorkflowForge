@@ -4,7 +4,7 @@ from fastapi import APIRouter, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from workflowforge_application.health import DependencyHealthService
 from workflowforge_application.health.service import DEFAULT_DEPENDENCY_TIMEOUT_SECONDS
-from workflowforge_infrastructure.config import Settings, get_settings
+from workflowforge_infrastructure.config import Environment, Settings, get_settings
 from workflowforge_infrastructure.database import (
     DatabaseHealthCheck,
     create_async_database_engine,
@@ -26,7 +26,7 @@ from workflowforge_api.dependencies import (
 )
 from workflowforge_api.exception_handlers import register_exception_handlers
 from workflowforge_api.lifespan import lifespan
-from workflowforge_api.middleware import RequestContextMiddleware
+from workflowforge_api.middleware import RequestContextMiddleware, SecurityHeadersMiddleware
 from workflowforge_api.routes import auth_router, health_router, tenancy_router
 
 
@@ -88,6 +88,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         RequestContextMiddleware,
         service="api",
         environment=resolved_settings.environment.value,
+    )
+    app.add_middleware(
+        SecurityHeadersMiddleware,
+        hsts_enabled=resolved_settings.environment is Environment.PRODUCTION,
     )
     app.add_middleware(
         CORSMiddleware,

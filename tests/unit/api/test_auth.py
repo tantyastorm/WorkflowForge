@@ -9,6 +9,7 @@ from uuid import UUID
 
 from fastapi.testclient import TestClient
 from workflowforge_api.dependencies import (
+    get_authentication_rate_limiter,
     get_current_principal,
     get_independent_audit_recorder,
     get_logout_all_sessions,
@@ -31,6 +32,11 @@ from workflowforge_application.identity import (
     StartUserSessionCommand,
     TokenPair,
     VerifiedAccessPrincipal,
+)
+from workflowforge_application.security import (
+    AuthenticationRateLimiter,
+    RateLimitDecision,
+    RateLimitUnavailableError,
 )
 from workflowforge_domain.audit import AuditEvent
 from workflowforge_domain.identity import SessionId
@@ -108,6 +114,43 @@ def test_login_invalid_credentials_returns_401_without_cookies() -> None:
     assert "set-cookie" not in response.headers
 
 
+def test_login_rate_limit_returns_429_without_authentication_attempt() -> None:
+    app = _app()
+    start = FakeStartUserSession(_token_pair("access-1", "refresh-1"))
+    limiter = FakeAuthenticationRateLimiter(login_allowed=RateLimitDecision(False, 42))
+    app.dependency_overrides[get_start_user_session] = lambda: start
+    app.dependency_overrides[get_authentication_rate_limiter] = lambda: limiter
+
+    with TestClient(app) as client:
+        response = client.post(
+            "/api/v1/auth/login",
+            json={"email": "Ada@Example.COM", "password": "bad password"},
+        )
+
+    assert response.status_code == 429
+    assert response.headers["retry-after"] == "42"
+    assert response.json()["error"]["code"] == "rate_limited"
+    assert start.commands == []
+    assert limiter.login_checks == [("ada@example.com", "testclient")]
+
+
+def test_login_rate_limit_audit_failure_preserves_public_429() -> None:
+    app = _app()
+    limiter = FakeAuthenticationRateLimiter(login_allowed=RateLimitDecision(False, 42))
+    app.dependency_overrides[get_authentication_rate_limiter] = lambda: limiter
+    app.dependency_overrides[get_independent_audit_recorder] = FailingAuditRecorder
+
+    with TestClient(app) as client:
+        response = client.post(
+            "/api/v1/auth/login",
+            json={"email": "ada@example.com", "password": "bad password"},
+        )
+
+    assert response.status_code == 429
+    assert response.headers["retry-after"] == "42"
+    assert response.json()["error"]["code"] == "rate_limited"
+
+
 def test_login_audit_failure_preserves_public_401_response() -> None:
     app = _app()
     app.dependency_overrides[get_start_user_session] = lambda: FakeStartUserSession(
@@ -123,6 +166,25 @@ def test_login_audit_failure_preserves_public_401_response() -> None:
 
     assert response.status_code == 401
     assert response.json()["error"]["code"] == "authentication_failed"
+
+
+def test_login_failure_rate_limit_backend_error_returns_429() -> None:
+    app = _app()
+    limiter = FakeAuthenticationRateLimiter(raise_on_login_failure=True)
+    app.dependency_overrides[get_start_user_session] = lambda: FakeStartUserSession(
+        InvalidCredentialsError("Invalid")
+    )
+    app.dependency_overrides[get_authentication_rate_limiter] = lambda: limiter
+
+    with TestClient(app) as client:
+        response = client.post(
+            "/api/v1/auth/login",
+            json={"email": "ada@example.com", "password": "bad password"},
+        )
+
+    assert response.status_code == 429
+    assert response.headers["retry-after"] == "60"
+    assert response.json()["error"]["code"] == "rate_limited"
 
 
 def test_refresh_requires_cookie_and_csrf() -> None:
@@ -230,6 +292,29 @@ def test_refresh_success_rotates_refresh_and_csrf_cookies() -> None:
     _assert_refresh_cookie(cookies, value="refresh-2")
     _assert_csrf_cookie(cookies)
     assert cookies["workflowforge_csrf"]["value"] != "csrf-1"
+
+
+def test_refresh_rate_limit_returns_429_before_cookie_lookup() -> None:
+    app = _app()
+    refresh = FakeRefreshSession(_token_pair("access-2", "refresh-2"))
+    limiter = FakeAuthenticationRateLimiter(refresh_allowed=RateLimitDecision(False, 17))
+    app.dependency_overrides[get_refresh_session] = lambda: refresh
+    app.dependency_overrides[get_authentication_rate_limiter] = lambda: limiter
+
+    with TestClient(app) as client:
+        response = client.post(
+            "/api/v1/auth/refresh",
+            headers={
+                "X-CSRF-Token": "csrf-1",
+                "Cookie": _auth_cookie_header(refresh="refresh-1", csrf="csrf-1"),
+            },
+        )
+
+    assert response.status_code == 429
+    assert response.headers["retry-after"] == "17"
+    assert response.json()["error"]["code"] == "rate_limited"
+    assert refresh.commands == []
+    assert limiter.refresh_checks == ["testclient"]
 
 
 def test_refresh_invalid_token_returns_401_and_clears_cookies() -> None:
@@ -385,6 +470,64 @@ class FailingAuditRecorder:
         raise AuditPersistenceError("audit failed")
 
 
+class FakeAuthenticationRateLimiter(AuthenticationRateLimiter):
+    def __init__(
+        self,
+        *,
+        login_allowed: RateLimitDecision | None = None,
+        refresh_allowed: RateLimitDecision | None = None,
+        raise_on_login_failure: bool = False,
+    ) -> None:
+        self.login_allowed = login_allowed or RateLimitDecision(True)
+        self.refresh_allowed = refresh_allowed or RateLimitDecision(True)
+        self.raise_on_login_failure = raise_on_login_failure
+        self.login_checks: list[tuple[str, str | None]] = []
+        self.login_failures: list[tuple[str, str | None]] = []
+        self.login_successes: list[tuple[str, str | None]] = []
+        self.refresh_checks: list[str | None] = []
+        self.refresh_failures: list[str | None] = []
+        self.refresh_successes: list[str | None] = []
+
+    async def check_login_allowed(
+        self,
+        *,
+        normalized_identifier: str,
+        client_key: str | None,
+    ) -> RateLimitDecision:
+        self.login_checks.append((normalized_identifier, client_key))
+        return self.login_allowed
+
+    async def record_login_failure(
+        self,
+        *,
+        normalized_identifier: str,
+        client_key: str | None,
+    ) -> RateLimitDecision:
+        if self.raise_on_login_failure:
+            raise RateLimitUnavailableError("down")
+        self.login_failures.append((normalized_identifier, client_key))
+        return self.login_allowed
+
+    async def record_login_success(
+        self,
+        *,
+        normalized_identifier: str,
+        client_key: str | None,
+    ) -> None:
+        self.login_successes.append((normalized_identifier, client_key))
+
+    async def check_refresh_allowed(self, *, client_key: str | None) -> RateLimitDecision:
+        self.refresh_checks.append(client_key)
+        return self.refresh_allowed
+
+    async def record_refresh_failure(self, *, client_key: str | None) -> RateLimitDecision:
+        self.refresh_failures.append(client_key)
+        return self.refresh_allowed
+
+    async def record_refresh_success(self, *, client_key: str | None) -> None:
+        self.refresh_successes.append(client_key)
+
+
 class FakeRefreshSession:
     def __init__(self, result: TokenPair | Exception) -> None:
         self.result = result
@@ -447,6 +590,7 @@ def _token_pair(access_token: str, refresh_token: str) -> TokenPair:
 def _app() -> Any:
     app = create_app(Settings(environment=Environment.TEST))
     app.dependency_overrides[get_independent_audit_recorder] = NullAuditRecorder
+    app.dependency_overrides[get_authentication_rate_limiter] = FakeAuthenticationRateLimiter
     return app
 
 

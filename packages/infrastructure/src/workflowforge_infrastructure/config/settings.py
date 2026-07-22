@@ -130,6 +130,46 @@ class RedisSettings(BaseSettings):
         return value
 
 
+class RateLimitFailurePolicy(StrEnum):
+    """Rate-limit backend failure policies."""
+
+    OPEN = "open"
+    CLOSED = "closed"
+
+
+class RateLimitSettings(BaseSettings):
+    """Validated authentication rate-limit settings."""
+
+    model_config = SettingsConfigDict(
+        env_prefix="WORKFLOWFORGE_RATE_LIMIT_",
+        extra="forbid",
+        validate_default=True,
+    )
+
+    login_identifier_threshold: int = Field(default=5, gt=0, le=100)
+    login_client_threshold: int = Field(default=20, gt=0, le=500)
+    login_window_seconds: int = Field(default=900, gt=0, le=86_400)
+    refresh_client_threshold: int = Field(default=10, gt=0, le=500)
+    refresh_window_seconds: int = Field(default=300, gt=0, le=86_400)
+    failure_policy: RateLimitFailurePolicy = RateLimitFailurePolicy.OPEN
+
+
+class CleanupSettings(BaseSettings):
+    """Validated authentication cleanup settings."""
+
+    model_config = SettingsConfigDict(
+        env_prefix="WORKFLOWFORGE_CLEANUP_",
+        extra="forbid",
+        validate_default=True,
+    )
+
+    session_batch_limit: int = Field(default=500, gt=0, le=10_000)
+    expired_session_retention_seconds: int = Field(default=604_800, ge=0)
+    revoked_session_retention_seconds: int = Field(default=2_592_000, ge=0)
+    schedule_enabled: bool = False
+    schedule_seconds: int = Field(default=3600, gt=0)
+
+
 class S3Settings(BaseSettings):
     """Validated S3-compatible object storage settings."""
 
@@ -396,6 +436,8 @@ class Settings(BaseSettings):
     celery: CelerySettings = Field(default_factory=lambda: CelerySettings())
     scheduler: SchedulerSettings = Field(default_factory=lambda: SchedulerSettings())
     auth: AuthSettings = Field(default_factory=lambda: AuthSettings())
+    rate_limit: RateLimitSettings = Field(default_factory=lambda: RateLimitSettings())
+    cleanup: CleanupSettings = Field(default_factory=lambda: CleanupSettings())
 
     @field_validator("cors_origins", mode="before")
     @classmethod
@@ -418,6 +460,30 @@ class Settings(BaseSettings):
             raise ValueError(msg)
         if self.environment is Environment.PRODUCTION and not self.auth.refresh_cookie_secure:
             msg = "Production requires Secure refresh cookies"
+            raise ValueError(msg)
+        if self.environment is Environment.PRODUCTION and self.debug:
+            msg = "Production requires debug mode to be disabled"
+            raise ValueError(msg)
+        if (
+            self.environment is Environment.PRODUCTION
+            and not self.database.password.get_secret_value()
+        ):
+            msg = "Production requires a database password"
+            raise ValueError(msg)
+        if self.environment is Environment.PRODUCTION and self.redis.password is None:
+            msg = "Production requires Redis authentication"
+            raise ValueError(msg)
+        if (
+            self.environment is Environment.PRODUCTION
+            and self.rate_limit.failure_policy is not RateLimitFailurePolicy.CLOSED
+        ):
+            msg = "Production requires fail-closed rate limiting"
+            raise ValueError(msg)
+        if self.auth.access_token_lifetime_seconds > 3600:
+            msg = "Access-token lifetime must not exceed one hour"
+            raise ValueError(msg)
+        if self.auth.session_lifetime_seconds > 7_776_000:
+            msg = "Session lifetime must not exceed 90 days"
             raise ValueError(msg)
         return self
 

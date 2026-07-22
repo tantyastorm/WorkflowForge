@@ -26,7 +26,10 @@ Passwords use Argon2id, minimum length 12, maximum length 256, support passphras
 
 Emails are normalized with `email.strip().casefold()`. WorkflowForge persists both display or original email and normalized email, with uniqueness based on normalized email. Provider-specific transformations such as Gmail dot removal are not used.
 
-Registration is controlled by `WORKFLOWFORGE_AUTH_REGISTRATION_ENABLED`. Development registration may be enabled; production registration defaults to disabled. Registration creates a user. Organization creation is separate, and the organization creator becomes owner. No default admin credentials are provided. A CLI bootstrap command is planned later in Phase 2.
+Public registration is not exposed in Phase 2. No default admin credentials are
+provided. Initial setup uses a first-owner bootstrap CLI that creates the first
+user, organization, owner membership, password credential, and audit row in one
+transaction, and refuses to run after users or organizations exist.
 
 ## Alternatives considered
 
@@ -54,10 +57,13 @@ Access-token verification checks both JWT claims and durable session state.
 Revoked, expired, missing, or user-mismatched sessions reject otherwise valid
 access tokens so logout takes effect before access-token expiry.
 
-Redis-backed rate limiting is planned for login, registration, and refresh. PostgreSQL remains the source of truth for users, sessions, and refresh-token records.
+Redis-backed rate limiting protects login and refresh. PostgreSQL remains the
+source of truth for users, sessions, and refresh-token records.
 
 ## Future migration path
 
 Opaque access tokens can be introduced later if immediate access-token introspection becomes necessary. WebAuthn, SSO, device-code login, Telegram linking, and API keys can be added as additional credential or actor-resolution mechanisms that feed the same server-side session and authorization model.
 
-Registration can remain disabled in production while the planned CLI bootstrap command creates the first user and organization.
+The bootstrap command can initialize production without opening public
+registration. WebAuthn, SSO, password reset, MFA, device-code login, Telegram
+linking, and API keys remain future credential paths.

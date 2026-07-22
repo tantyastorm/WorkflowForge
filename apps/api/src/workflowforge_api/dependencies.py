@@ -33,6 +33,7 @@ from workflowforge_application.identity import (
     VerifiedAccessPrincipal,
     VerifyAccessToken,
 )
+from workflowforge_application.security import AuthenticationRateLimiter
 from workflowforge_domain.audit import AuditEventType, AuditOutcome
 from workflowforge_domain.identity import Permission
 from workflowforge_infrastructure.audit import SqlAlchemyAuditRepository
@@ -55,6 +56,7 @@ from workflowforge_infrastructure.identity import (
     SystemClock,
     Uuid4Generator,
 )
+from workflowforge_infrastructure.security import RedisAuthenticationRateLimiter
 
 from workflowforge_api.audit import (
     IndependentSqlAlchemyAuditRecorder,
@@ -234,6 +236,15 @@ def get_independent_audit_recorder(request: Request) -> AuditRecorder:
     """Return an audit recorder that commits independently of request state."""
 
     return IndependentSqlAlchemyAuditRecorder(request.app.state.database_engine)
+
+
+def get_authentication_rate_limiter(request: Request) -> AuthenticationRateLimiter:
+    """Return the Redis-backed authentication rate limiter."""
+
+    return RedisAuthenticationRateLimiter(
+        request.app.state.redis_client,
+        get_settings(request).rate_limit,
+    )
 
 
 async def get_current_principal(

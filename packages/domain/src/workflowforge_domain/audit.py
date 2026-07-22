@@ -64,6 +64,11 @@ class AuditEventType(StrEnum):
     AUTHORIZATION_PERMISSION_DENIED = "authorization.permission_denied"
     CREDENTIAL_PASSWORD_SET = "credential.password_set"
     CREDENTIAL_PASSWORD_REPLACED = "credential.password_replaced"
+    BOOTSTRAP_OWNER_CREATED = "bootstrap.owner_created"
+    BOOTSTRAP_REFUSED = "bootstrap.refused"
+    AUTHENTICATION_LOGIN_RATE_LIMITED = "authentication.login_rate_limited"
+    SESSION_REFRESH_RATE_LIMITED = "session.refresh_rate_limited"
+    SECURITY_RATE_LIMIT_BACKEND_UNAVAILABLE = "security.rate_limit_backend_unavailable"
 
 
 class AuditOutcome(StrEnum):

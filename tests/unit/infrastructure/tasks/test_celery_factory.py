@@ -1,9 +1,13 @@
 """Celery app factory tests."""
 
 from workflowforge_contracts import DIAGNOSTIC_ECHO_TASK_NAME, SCHEDULER_HEARTBEAT_TASK_NAME
-from workflowforge_infrastructure.config import Settings
+from workflowforge_infrastructure.config import CleanupSettings, Settings
 from workflowforge_infrastructure.tasks import close_celery_resources, create_celery_app
-from workflowforge_infrastructure.tasks.schedules import SCHEDULER_HEARTBEAT_SCHEDULE_NAME
+from workflowforge_infrastructure.tasks.schedules import (
+    SCHEDULER_HEARTBEAT_SCHEDULE_NAME,
+    SECURITY_CLEANUP_SCHEDULE_NAME,
+)
+from workflowforge_infrastructure.tasks.security import SECURITY_CLEANUP_TASK_NAME
 
 
 def test_celery_factory_configures_safe_serialization_and_utc() -> None:
@@ -43,10 +47,29 @@ def test_celery_factory_registers_diagnostic_tasks_and_beat_schedule() -> None:
 
     assert DIAGNOSTIC_ECHO_TASK_NAME in app.tasks
     assert SCHEDULER_HEARTBEAT_TASK_NAME in app.tasks
+    assert SECURITY_CLEANUP_TASK_NAME in app.tasks
+    cleanup_task = app.tasks[SECURITY_CLEANUP_TASK_NAME]
+    assert cleanup_task.autoretry_for
+    assert cleanup_task.retry_backoff is True
+    assert cleanup_task.retry_jitter is False
+    assert cleanup_task.retry_kwargs == {"max_retries": 3}
     assert app.conf.beat_schedule[SCHEDULER_HEARTBEAT_SCHEDULE_NAME] == {
         "task": SCHEDULER_HEARTBEAT_TASK_NAME,
         "schedule": 30,
         "options": {"queue": "workflowforge.diagnostics"},
+    }
+    assert SECURITY_CLEANUP_SCHEDULE_NAME not in app.conf.beat_schedule
+
+
+def test_celery_factory_registers_security_cleanup_schedule_when_enabled() -> None:
+    settings = Settings(cleanup=CleanupSettings(schedule_enabled=True, schedule_seconds=600))
+
+    app = create_celery_app(settings)
+
+    assert app.conf.beat_schedule[SECURITY_CLEANUP_SCHEDULE_NAME] == {
+        "task": SECURITY_CLEANUP_TASK_NAME,
+        "schedule": 600,
+        "options": {"queue": "workflowforge"},
     }
 
 

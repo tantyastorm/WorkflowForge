@@ -415,7 +415,12 @@ Secrets must not be hard-coded. Credentials should be accessed through configura
 
 Browser execution should be isolated. External requests should be controlled and observable. Authentication and authorization are planned as Phase 2 foundations and are not implemented by this documentation work. Untrusted documents and external responses must be treated as untrusted input. WorkflowForge must not support arbitrary runtime code execution in V1.
 
-Phase 2 authentication and authorization are documented as planned foundations. Refresh-cookie endpoints use HttpOnly cookies, `Secure` in production, `SameSite=Lax` by default, restricted cookie paths, Origin validation, and CSRF protection for cookie-authenticated state-changing endpoints. Redis-backed rate limiting is planned for login, registration, refresh, and membership invitations. PostgreSQL remains the source of truth for users, sessions, memberships, refresh tokens, and audit records.
+Phase 2 authentication and authorization use HttpOnly refresh cookies, `Secure`
+cookies in production, `SameSite=Lax` by default, restricted cookie paths,
+Origin validation, CSRF protection for cookie-authenticated state-changing
+endpoints, Redis-backed login and refresh rate limiting, and a first-owner
+bootstrap CLI. PostgreSQL remains the source of truth for users, sessions,
+memberships, refresh tokens, and audit records.
 
 HTTP errors distinguish missing or invalid authentication (`401`), insufficient permission on visible tenant resources (`403`), hidden cross-tenant resources (`404`), invariants and uniqueness conflicts (`409`), validation errors (`422`), and rate limiting (`429`).
 
