@@ -27,7 +27,7 @@ from workflowforge_api.dependencies import (
 from workflowforge_api.exception_handlers import register_exception_handlers
 from workflowforge_api.lifespan import lifespan
 from workflowforge_api.middleware import RequestContextMiddleware
-from workflowforge_api.routes import health_router
+from workflowforge_api.routes import auth_router, health_router
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -92,13 +92,15 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.add_middleware(
         CORSMiddleware,
         allow_origins=list(resolved_settings.cors_origins),
-        allow_credentials=False,
+        allow_credentials=True,
         allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
         allow_headers=["*"],
     )
 
     register_exception_handlers(app)
     app.include_router(health_router)
-    app.include_router(APIRouter(prefix=resolved_settings.api.v1_prefix))
+    api_router = APIRouter(prefix=resolved_settings.api.v1_prefix)
+    api_router.include_router(auth_router)
+    app.include_router(api_router)
 
     return app

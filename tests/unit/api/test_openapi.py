@@ -19,6 +19,19 @@ def test_openapi_metadata_and_health_routes_are_registered() -> None:
     assert "/health/live" in schema["paths"]
     assert "/health/ready" in schema["paths"]
     assert "/health/dependencies" in schema["paths"]
+    assert "/api/v1/auth/login" in schema["paths"]
+    assert "/api/v1/auth/refresh" in schema["paths"]
+    assert "/api/v1/auth/me" in schema["paths"]
+    assert "HTTPBearer" in schema["components"]["securitySchemes"]
+    assert schema["paths"]["/api/v1/auth/me"]["get"]["security"] == [{"HTTPBearer": []}]
+    assert schema["paths"]["/api/v1/auth/logout"]["post"]["security"] == [{"HTTPBearer": []}]
+    assert schema["paths"]["/api/v1/auth/logout-all"]["post"]["security"] == [{"HTTPBearer": []}]
+    assert "requestBody" not in schema["paths"]["/api/v1/auth/refresh"]["post"]
+    login_schema = schema["components"]["schemas"]["LoginRequest"]
+    assert login_schema["properties"]["password"]["format"] == "password"
+    assert login_schema["properties"]["password"]["writeOnly"] is True
+    token_properties = schema["components"]["schemas"]["TokenResponse"]["properties"]
+    assert "refresh_token" not in token_properties
     assert "/health/worker" not in schema["paths"]
 
 

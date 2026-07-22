@@ -35,6 +35,20 @@ Refresh-cookie endpoints must use:
 - Origin validation.
 - CSRF protection for cookie-authenticated state-changing endpoints.
 
+The API exposes authentication under `/api/v1/auth`. Login returns the access
+token in JSON and sets the raw refresh token only in an HttpOnly cookie. Refresh,
+logout, and logout-all require a readable CSRF cookie to match the configured
+CSRF request header using constant-time comparison. Refresh rotates both the
+refresh cookie and CSRF cookie after successful durable rotation. Invalid or
+replayed refresh attempts return a generic authentication failure and clear auth
+cookies.
+
+Cookie-authenticated state-changing requests reject explicitly untrusted or
+malformed `Origin` values by exact scheme, host, and port comparison against the
+configured CORS origins. Requests without an `Origin` header are allowed for
+non-browser clients. Login does not require a pre-existing CSRF cookie, but an
+explicit untrusted login `Origin` is rejected.
+
 ## Refresh-Token Storage
 
 Refresh tokens are cryptographically random opaque values. Only the SHA-256

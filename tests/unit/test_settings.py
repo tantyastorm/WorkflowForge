@@ -24,6 +24,12 @@ AUTH_ENVIRONMENT_VARIABLES = (
     "WORKFLOWFORGE_AUTH_REFRESH_TOKEN_LIFETIME_SECONDS",
     "WORKFLOWFORGE_AUTH_SESSION_LIFETIME_SECONDS",
     "WORKFLOWFORGE_AUTH_REFRESH_TOKEN_BYTES",
+    "WORKFLOWFORGE_AUTH_REFRESH_COOKIE_NAME",
+    "WORKFLOWFORGE_AUTH_REFRESH_COOKIE_PATH",
+    "WORKFLOWFORGE_AUTH_REFRESH_COOKIE_SECURE",
+    "WORKFLOWFORGE_AUTH_REFRESH_COOKIE_SAMESITE",
+    "WORKFLOWFORGE_AUTH_CSRF_COOKIE_NAME",
+    "WORKFLOWFORGE_AUTH_CSRF_HEADER_NAME",
 )
 
 
@@ -81,6 +87,12 @@ def test_settings_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
     assert settings.auth.refresh_token_lifetime_seconds == 2_592_000
     assert settings.auth.session_lifetime_seconds == 2_592_000
     assert settings.auth.refresh_token_bytes == 32
+    assert settings.auth.refresh_cookie_name == "workflowforge_refresh"
+    assert settings.auth.refresh_cookie_path == "/api/v1/auth"
+    assert settings.auth.refresh_cookie_secure is False
+    assert settings.auth.refresh_cookie_samesite == "lax"
+    assert settings.auth.csrf_cookie_name == "workflowforge_csrf"
+    assert settings.auth.csrf_header_name == "X-CSRF-Token"
 
 
 def test_settings_environment_overrides(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -326,6 +338,12 @@ def test_auth_settings_environment_overrides(monkeypatch: pytest.MonkeyPatch) ->
     monkeypatch.setenv("WORKFLOWFORGE_AUTH_REFRESH_TOKEN_LIFETIME_SECONDS", "120")
     monkeypatch.setenv("WORKFLOWFORGE_AUTH_SESSION_LIFETIME_SECONDS", "180")
     monkeypatch.setenv("WORKFLOWFORGE_AUTH_REFRESH_TOKEN_BYTES", "48")
+    monkeypatch.setenv("WORKFLOWFORGE_AUTH_REFRESH_COOKIE_NAME", "refresh")
+    monkeypatch.setenv("WORKFLOWFORGE_AUTH_REFRESH_COOKIE_PATH", "/custom/auth")
+    monkeypatch.setenv("WORKFLOWFORGE_AUTH_REFRESH_COOKIE_SECURE", "true")
+    monkeypatch.setenv("WORKFLOWFORGE_AUTH_REFRESH_COOKIE_SAMESITE", "strict")
+    monkeypatch.setenv("WORKFLOWFORGE_AUTH_CSRF_COOKIE_NAME", "csrf")
+    monkeypatch.setenv("WORKFLOWFORGE_AUTH_CSRF_HEADER_NAME", "X-Test-CSRF")
 
     settings = Settings()
 
@@ -336,6 +354,12 @@ def test_auth_settings_environment_overrides(monkeypatch: pytest.MonkeyPatch) ->
     assert settings.auth.refresh_token_lifetime_seconds == 120
     assert settings.auth.session_lifetime_seconds == 180
     assert settings.auth.refresh_token_bytes == 48
+    assert settings.auth.refresh_cookie_name == "refresh"
+    assert settings.auth.refresh_cookie_path == "/custom/auth"
+    assert settings.auth.refresh_cookie_secure is True
+    assert settings.auth.refresh_cookie_samesite == "strict"
+    assert settings.auth.csrf_cookie_name == "csrf"
+    assert settings.auth.csrf_header_name == "X-Test-CSRF"
     assert "override-secret" not in repr(settings.auth)
 
 
@@ -348,6 +372,11 @@ def test_auth_settings_environment_overrides(monkeypatch: pytest.MonkeyPatch) ->
         ("refresh_token_lifetime_seconds", 0),
         ("session_lifetime_seconds", 0),
         ("refresh_token_bytes", 31),
+        ("refresh_cookie_name", "bad cookie"),
+        ("refresh_cookie_path", "api/v1/auth"),
+        ("refresh_cookie_samesite", "wide-open"),
+        ("csrf_cookie_name", "bad cookie"),
+        ("csrf_header_name", "Bad Header"),
     ],
 )
 def test_auth_settings_reject_invalid_values(field: str, value: object) -> None:
@@ -360,11 +389,31 @@ def test_auth_refresh_lifetime_must_not_exceed_session_lifetime() -> None:
         AuthSettings(refresh_token_lifetime_seconds=120, session_lifetime_seconds=60)
 
 
+def test_auth_cookie_names_must_not_collide() -> None:
+    with pytest.raises(ValidationError, match="cookie names"):
+        AuthSettings(
+            refresh_cookie_name="workflowforge_auth",
+            csrf_cookie_name="workflowforge_auth",
+        )
+
+
 def test_production_rejects_default_auth_secret(monkeypatch: pytest.MonkeyPatch) -> None:
     clear_auth_environment(monkeypatch)
     monkeypatch.setenv("WORKFLOWFORGE_ENVIRONMENT", "production")
 
     with pytest.raises(ValidationError, match="JWT signing secret"):
+        Settings()
+
+
+def test_production_requires_secure_refresh_cookie(monkeypatch: pytest.MonkeyPatch) -> None:
+    clear_auth_environment(monkeypatch)
+    monkeypatch.setenv("WORKFLOWFORGE_ENVIRONMENT", "production")
+    monkeypatch.setenv(
+        "WORKFLOWFORGE_AUTH_JWT_SIGNING_SECRET",
+        "production-secret-with-at-least-32-characters",
+    )
+
+    with pytest.raises(ValidationError, match="Secure refresh cookies"):
         Settings()
 
 

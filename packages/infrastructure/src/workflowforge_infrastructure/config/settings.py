@@ -1,8 +1,9 @@
 """WorkflowForge settings foundation."""
 
+import re
 from enum import StrEnum
 from functools import lru_cache
-from typing import Annotated
+from typing import Annotated, Literal
 from urllib.parse import urlparse
 
 from pydantic import Field, SecretStr, field_validator, model_validator
@@ -265,6 +266,8 @@ class SchedulerSettings(BaseSettings):
 
 
 DEFAULT_JWT_SIGNING_SECRET = "workflowforge-development-jwt-secret-change-before-production-0001"
+_COOKIE_NAME_PATTERN = re.compile(r"^[A-Za-z0-9._-]+$")
+_CSRF_HEADER_PATTERN = re.compile(r"^[A-Za-z0-9-]+$")
 
 
 class AuthSettings(BaseSettings):
@@ -284,6 +287,12 @@ class AuthSettings(BaseSettings):
     refresh_token_lifetime_seconds: int = Field(default=2_592_000, gt=0)
     session_lifetime_seconds: int = Field(default=2_592_000, gt=0)
     refresh_token_bytes: int = Field(default=32, ge=32)
+    refresh_cookie_name: str = Field(default="workflowforge_refresh", min_length=1)
+    refresh_cookie_path: str = Field(default="/api/v1/auth", min_length=1)
+    refresh_cookie_secure: bool = False
+    refresh_cookie_samesite: Literal["lax", "strict", "none"] = "lax"
+    csrf_cookie_name: str = Field(default="workflowforge_csrf", min_length=1)
+    csrf_header_name: str = Field(default="X-CSRF-Token", min_length=1)
 
     @field_validator("jwt_algorithm")
     @classmethod
@@ -305,12 +314,56 @@ class AuthSettings(BaseSettings):
             raise ValueError(msg)
         return value
 
+    @field_validator("refresh_cookie_name", "csrf_cookie_name")
+    @classmethod
+    def validate_cookie_name(cls, value: str) -> str:
+        """Require simple portable cookie names."""
+
+        if _COOKIE_NAME_PATTERN.fullmatch(value) is None:
+            msg = "Cookie names may contain only letters, numbers, dots, underscores, and hyphens"
+            raise ValueError(msg)
+        return value
+
+    @field_validator("refresh_cookie_path")
+    @classmethod
+    def validate_cookie_path(cls, value: str) -> str:
+        """Require an absolute cookie path."""
+
+        if not value.startswith("/"):
+            msg = "Refresh cookie path must begin with /"
+            raise ValueError(msg)
+        return value
+
+    @field_validator("refresh_cookie_samesite")
+    @classmethod
+    def validate_refresh_cookie_samesite(cls, value: str) -> str:
+        """Require a supported SameSite value."""
+
+        normalized = value.lower()
+        if normalized not in {"lax", "strict", "none"}:
+            msg = "Refresh cookie SameSite must be lax, strict, or none"
+            raise ValueError(msg)
+        return normalized
+
+    @field_validator("csrf_header_name")
+    @classmethod
+    def validate_csrf_header_name(cls, value: str) -> str:
+        """Require a simple HTTP header name for CSRF proof."""
+
+        if _CSRF_HEADER_PATTERN.fullmatch(value) is None:
+            msg = "CSRF header name may contain only letters, numbers, and hyphens"
+            raise ValueError(msg)
+        return value
+
     @model_validator(mode="after")
     def validate_lifetime_policy(self) -> "AuthSettings":
         """Require refresh-token lifetime not to exceed session lifetime."""
 
         if self.refresh_token_lifetime_seconds > self.session_lifetime_seconds:
             msg = "Refresh token lifetime must not exceed session lifetime"
+            raise ValueError(msg)
+        if self.refresh_cookie_name == self.csrf_cookie_name:
+            msg = "Refresh and CSRF cookie names must be distinct"
             raise ValueError(msg)
         return self
 
@@ -362,6 +415,9 @@ class Settings(BaseSettings):
             and self.auth.jwt_signing_secret.get_secret_value() == DEFAULT_JWT_SIGNING_SECRET
         ):
             msg = "Production requires an explicit JWT signing secret"
+            raise ValueError(msg)
+        if self.environment is Environment.PRODUCTION and not self.auth.refresh_cookie_secure:
+            msg = "Production requires Secure refresh cookies"
             raise ValueError(msg)
         return self
 

@@ -319,6 +319,13 @@ Tenant-scoped Phase 2 routes use organization route parameters such as `/api/v1/
 
 Authentication transport remains an API concern: bearer access-token parsing, refresh-cookie handling, CSRF and Origin checks for cookie-authenticated state-changing endpoints, response cookies, and exception mapping belong in `apps/api`. Identity, session, authorization, tenant, and audit behavior should be exposed to the API through application use cases and ports.
 
+The Phase 2 authentication API composes the identity lifecycle use cases with
+SQLAlchemy repositories, token adapters, and a request-scoped transaction
+manager in `apps/api`. The API sets and clears refresh/CSRF cookies only after
+state-changing application use cases return or intentionally committed replay
+revocation has been reported. Rate limiting hooks remain a future boundary and
+do not write Redis counters yet.
+
 ## Background Execution
 
 The API creates durable intent in PostgreSQL before publishing asynchronous work. Celery transports work to workers. Workers invoke application use cases, and business state is persisted in PostgreSQL.

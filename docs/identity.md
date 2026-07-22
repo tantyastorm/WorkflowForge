@@ -116,6 +116,13 @@ Access-token verification validates the JWT signature and required claims, then
 checks durable session state. Revoked, expired, missing, or user-mismatched
 sessions reject the token without resolving tenant membership or permissions.
 
+The HTTP API exposes session lifecycle behavior through `/api/v1/auth/login`,
+`/api/v1/auth/refresh`, `/api/v1/auth/logout`, `/api/v1/auth/logout-all`, and
+`/api/v1/auth/me`. Access tokens use `Authorization: Bearer`. Refresh tokens are
+cookie-only and are not present in request or response JSON. The `/me` response
+returns only user ID, session ID, issue time, and expiry time; tenant context,
+roles, and permissions remain separate.
+
 ## Registration And Bootstrap
 
 Registration is controlled by `WORKFLOWFORGE_AUTH_REGISTRATION_ENABLED`.
@@ -143,5 +150,5 @@ WorkflowForge should not create a generic `AuthService` that owns identity, sess
 
 Phase 2 persists users with display email, normalized email, display name, active state, and lifecycle timestamps. Normalized email remains the uniqueness key and uses the same `email.strip().casefold()` behavior as the domain value object.
 
-Sessions, refresh tokens, HTTP login routes, registration routes, and API endpoints remain
-outside this persistence step.
+Registration routes, password reset, tenant selection, and frontend
+authentication UX remain outside this step.
