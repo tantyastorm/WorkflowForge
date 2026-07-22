@@ -41,6 +41,24 @@ class AuthorizationPolicy:
 
         return permission in context.permissions
 
+    def allows_any(
+        self,
+        context: TenantContext,
+        permissions: Iterable[Permission],
+    ) -> bool:
+        """Return whether the context has any permission from a set."""
+
+        return any(permission in context.permissions for permission in permissions)
+
+    def allows_all(
+        self,
+        context: TenantContext,
+        permissions: Iterable[Permission],
+    ) -> bool:
+        """Return whether the context has every permission from a set."""
+
+        return all(permission in context.permissions for permission in permissions)
+
     def require(self, context: TenantContext, permission: Permission) -> None:
         """Require a permission or raise a transport-neutral denial."""
 
@@ -49,6 +67,43 @@ class AuthorizationPolicy:
                 user_id=context.user_id,
                 organization_id=context.organization_id,
                 permission=permission,
+            )
+
+    def require_any(
+        self,
+        context: TenantContext,
+        permissions: Iterable[Permission],
+    ) -> None:
+        """Require at least one permission or raise a transport-neutral denial."""
+
+        permission_set = frozenset(permissions)
+        if not permission_set:
+            msg = "At least one permission is required."
+            raise ValueError(msg)
+        if not self.allows_any(context, permission_set):
+            raise PermissionDenied(
+                user_id=context.user_id,
+                organization_id=context.organization_id,
+                permission=next(iter(permission_set)),
+            )
+
+    def require_all(
+        self,
+        context: TenantContext,
+        permissions: Iterable[Permission],
+    ) -> None:
+        """Require every permission or raise a transport-neutral denial."""
+
+        permission_set = frozenset(permissions)
+        if not permission_set:
+            msg = "At least one permission is required."
+            raise ValueError(msg)
+        missing = permission_set.difference(context.permissions)
+        if missing:
+            raise PermissionDenied(
+                user_id=context.user_id,
+                organization_id=context.organization_id,
+                permission=next(iter(missing)),
             )
 
 

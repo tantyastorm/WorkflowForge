@@ -123,6 +123,10 @@ cookie-only and are not present in request or response JSON. The `/me` response
 returns only user ID, session ID, issue time, and expiry time; tenant context,
 roles, and permissions remain separate.
 
+Tenant-scoped HTTP routes resolve organization context from the route parameter
+and durable membership state after bearer authentication succeeds. `/auth/me`
+remains authentication-only and does not require or return tenant selection.
+
 ## Registration And Bootstrap
 
 Registration is controlled by `WORKFLOWFORGE_AUTH_REGISTRATION_ENABLED`.

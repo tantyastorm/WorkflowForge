@@ -317,6 +317,13 @@ This commit does not define the endpoint catalogue.
 
 Tenant-scoped Phase 2 routes use organization route parameters such as `/api/v1/organizations/{organization_id}/...`. The API resolves tenant context server-side from the authenticated user, active organization, active membership, and code-defined permission map. Organization IDs from arbitrary request bodies are not trusted as tenant context.
 
+Tenant context resolution lives in the application authorization boundary. The
+API composes repositories for the selected route organization and authenticated
+principal, then passes an immutable `TenantContext` to permission dependencies
+and future tenant-scoped use cases. Permission checks use the code-defined
+`Permission` enum and centralized role mapping rather than route-local strings
+or client-provided roles.
+
 Authentication transport remains an API concern: bearer access-token parsing, refresh-cookie handling, CSRF and Origin checks for cookie-authenticated state-changing endpoints, response cookies, and exception mapping belong in `apps/api`. Identity, session, authorization, tenant, and audit behavior should be exposed to the API through application use cases and ports.
 
 The Phase 2 authentication API composes the identity lifecycle use cases with

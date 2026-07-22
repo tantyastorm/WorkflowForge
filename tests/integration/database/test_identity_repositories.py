@@ -516,8 +516,33 @@ async def test_membership_repository_tenant_scoped_behavior_and_duplicates() -> 
             )
             == active
         )
+        assert (
+            await membership_repo.get_by_user_and_organization(
+                user_id=USER_ID,
+                organization_id=SECOND_ORGANIZATION_ID,
+            )
+            == other_org_membership
+        )
         assert await membership_repo.list_for_organization(ORGANIZATION_ID) == [active]
         assert await membership_repo.list_for_user(USER_ID) == [active, other_org_membership]
+
+        suspended_other_org = other_org_membership.suspend(now=NOW + timedelta(seconds=1))
+        assert await membership_repo.update(suspended_other_org) == suspended_other_org
+        await session.commit()
+        assert (
+            await membership_repo.get_by_user_and_organization(
+                user_id=USER_ID,
+                organization_id=SECOND_ORGANIZATION_ID,
+            )
+            == suspended_other_org
+        )
+        assert (
+            await membership_repo.get_by_user_and_organization(
+                user_id=USER_ID,
+                organization_id=ORGANIZATION_ID,
+            )
+            == active
+        )
 
         duplicate = _active_membership(
             membership_id=UUID("33333333-3333-4333-8333-555555555555"),

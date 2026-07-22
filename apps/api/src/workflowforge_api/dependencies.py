@@ -1,14 +1,24 @@
 """Typed accessors for API application state."""
 
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Awaitable, Callable
 from dataclasses import dataclass
 from datetime import timedelta
 from typing import Annotated, cast
+from uuid import UUID
 
-from fastapi import Depends, Request, status
+from fastapi import Depends, Path, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.datastructures import State
+from workflowforge_application.authorization import (
+    AuthorizationPolicy,
+    PermissionDenied,
+    ResolveTenantContext,
+    ResolveTenantContextCommand,
+    TenantAccessDenied,
+    TenantContext,
+    TenantMembershipInactive,
+)
 from workflowforge_application.health import DependencyHealthService
 from workflowforge_application.identity import (
     AuthenticateUser,
@@ -22,6 +32,7 @@ from workflowforge_application.identity import (
     VerifiedAccessPrincipal,
     VerifyAccessToken,
 )
+from workflowforge_domain.identity import Permission
 from workflowforge_infrastructure.config import Settings
 from workflowforge_infrastructure.database import (
     SqlAlchemyTransactionManager,
@@ -33,6 +44,8 @@ from workflowforge_infrastructure.identity import (
     JwtAccessTokenCodec,
     SecretsRefreshTokenGenerator,
     Sha256RefreshTokenHasher,
+    SqlAlchemyMembershipRepository,
+    SqlAlchemyOrganizationRepository,
     SqlAlchemyPasswordCredentialRepository,
     SqlAlchemySessionRepository,
     SqlAlchemyUserRepository,
@@ -192,6 +205,17 @@ def get_verify_access_token(
     )
 
 
+def get_resolve_tenant_context(
+    session: Annotated[AsyncSession, Depends(get_database_session)],
+) -> ResolveTenantContext:
+    """Compose the tenant-context resolver."""
+
+    return ResolveTenantContext(
+        organizations=SqlAlchemyOrganizationRepository(session),
+        memberships=SqlAlchemyMembershipRepository(session),
+    )
+
+
 async def get_current_principal(
     credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(bearer_scheme)],
     verify_access_token: Annotated[VerifyAccessToken, Depends(get_verify_access_token)],
@@ -208,6 +232,89 @@ async def get_current_principal(
         raise _authentication_error() from exc
 
 
+async def get_current_tenant_context(
+    organization_id: Annotated[
+        UUID,
+        Path(
+            description="Selected organization identifier for tenant-scoped requests.",
+        ),
+    ],
+    principal: Annotated[VerifiedAccessPrincipal, Depends(get_current_principal)],
+    resolve_tenant_context: Annotated[
+        ResolveTenantContext,
+        Depends(get_resolve_tenant_context),
+    ],
+) -> TenantContext:
+    """Resolve the current authenticated user into the selected organization."""
+
+    try:
+        return await resolve_tenant_context(
+            ResolveTenantContextCommand(
+                user_id=principal.user_id,
+                organization_id=organization_id,
+            )
+        )
+    except (TenantAccessDenied, TenantMembershipInactive) as exc:
+        raise _tenant_access_error() from exc
+
+
+def require_permission(
+    permission: Permission,
+) -> Callable[[TenantContext], Awaitable[TenantContext]]:
+    """Create a dependency requiring one typed permission."""
+
+    _validate_permissions((permission,))
+
+    async def dependency(
+        context: Annotated[TenantContext, Depends(get_current_tenant_context)],
+    ) -> TenantContext:
+        try:
+            AuthorizationPolicy().require(context, permission)
+        except PermissionDenied as exc:
+            raise _permission_denied_error() from exc
+        return context
+
+    return dependency
+
+
+def require_any_permission(
+    *permissions: Permission,
+) -> Callable[[TenantContext], Awaitable[TenantContext]]:
+    """Create a dependency requiring at least one typed permission."""
+
+    _validate_permissions(permissions)
+
+    async def dependency(
+        context: Annotated[TenantContext, Depends(get_current_tenant_context)],
+    ) -> TenantContext:
+        try:
+            AuthorizationPolicy().require_any(context, permissions)
+        except PermissionDenied as exc:
+            raise _permission_denied_error() from exc
+        return context
+
+    return dependency
+
+
+def require_all_permissions(
+    *permissions: Permission,
+) -> Callable[[TenantContext], Awaitable[TenantContext]]:
+    """Create a dependency requiring every typed permission."""
+
+    _validate_permissions(permissions)
+
+    async def dependency(
+        context: Annotated[TenantContext, Depends(get_current_tenant_context)],
+    ) -> TenantContext:
+        try:
+            AuthorizationPolicy().require_all(context, permissions)
+        except PermissionDenied as exc:
+            raise _permission_denied_error() from exc
+        return context
+
+    return dependency
+
+
 def _authentication_error() -> ApiError:
     return ApiError(
         status_code=status.HTTP_401_UNAUTHORIZED,
@@ -215,3 +322,28 @@ def _authentication_error() -> ApiError:
         message="Authentication is required.",
         headers={"WWW-Authenticate": "Bearer"},
     )
+
+
+def _tenant_access_error() -> ApiError:
+    return ApiError(
+        status_code=status.HTTP_403_FORBIDDEN,
+        code="tenant_access_denied",
+        message="The selected organization is not available.",
+    )
+
+
+def _permission_denied_error() -> ApiError:
+    return ApiError(
+        status_code=status.HTTP_403_FORBIDDEN,
+        code="permission_denied",
+        message="The request is not allowed.",
+    )
+
+
+def _validate_permissions(permissions: tuple[Permission, ...]) -> None:
+    if not permissions:
+        msg = "At least one permission is required."
+        raise ValueError(msg)
+    if any(not isinstance(permission, Permission) for permission in permissions):
+        msg = "Permission dependencies require Permission values."
+        raise TypeError(msg)

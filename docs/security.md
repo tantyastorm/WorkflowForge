@@ -26,6 +26,14 @@ The default access-token lifetime is 15 minutes. The JWT contains only `sub`,
 `sid`, `jti`, `iat`, `exp`, `iss`, and `aud`; tenant, role, permission,
 password, and refresh-token state are excluded.
 
+For Phase 2 tenant-scoped API routes, the selected organization is the
+`organization_id` route parameter under `/api/v1/organizations/{organization_id}`.
+The API rejects malformed UUID route parameters through the standard validation
+envelope and returns a generic tenant-access denial for missing, inactive, or
+unusable membership. Permission denial remains a separate `403` response so
+authentication, tenant access, and authorization failures stay distinguishable
+inside the application boundary.
+
 Refresh-cookie endpoints must use:
 
 - `HttpOnly`.

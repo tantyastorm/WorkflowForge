@@ -5,13 +5,44 @@ from __future__ import annotations
 from dataclasses import dataclass
 from uuid import UUID
 
-from workflowforge_domain.identity import Permission
+from workflowforge_domain.identity import MembershipStatus, Permission
 
 from workflowforge_application.errors import ApplicationError
 
 
 class AuthorizationError(ApplicationError):
     """Base class for transport-neutral authorization failures."""
+
+
+@dataclass(frozen=True, slots=True)
+class TenantAccessDenied(AuthorizationError):
+    """Raised when a user cannot enter a selected tenant context."""
+
+    user_id: UUID
+    organization_id: UUID
+    reason: str
+
+    def __str__(self) -> str:
+        return (
+            f"Tenant access denied for user {self.user_id} "
+            f"in organization {self.organization_id}: {self.reason}."
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class TenantMembershipInactive(AuthorizationError):
+    """Raised when tenant membership exists but cannot authorize access."""
+
+    user_id: UUID
+    organization_id: UUID
+    membership_id: UUID
+    status: MembershipStatus
+
+    def __str__(self) -> str:
+        return (
+            f"Tenant membership {self.membership_id} for user {self.user_id} "
+            f"in organization {self.organization_id} is {self.status.value}."
+        )
 
 
 @dataclass(frozen=True, slots=True)

@@ -14,8 +14,10 @@ from workflowforge_api.schemas.health import (
     LiveHealthResponse,
     ReadyHealthResponse,
 )
+from workflowforge_api.schemas.tenancy import AuthorizedProbeResponse, TenantContextResponse
 
 __all__ = [
+    "AuthorizedProbeResponse",
     "DependencyHealthResponse",
     "DependencyHealthResponseItem",
     "ErrorDetail",
@@ -26,5 +28,6 @@ __all__ = [
     "LogoutResponse",
     "MeResponse",
     "ReadyHealthResponse",
+    "TenantContextResponse",
     "TokenResponse",
 ]

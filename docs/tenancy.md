@@ -12,6 +12,11 @@ Tenant-scoped API routes use organization route parameters:
 
 The API must never trust organization IDs from arbitrary request bodies. Request bodies may identify tenant-owned resources only within the tenant context already established by the route and authenticated user.
 
+Phase 2 resolves the route `organization_id` against current durable membership
+state on every tenant-scoped request. WorkflowForge does not silently choose a
+default organization and does not embed tenant IDs, roles, or permissions in
+access tokens.
+
 ## TenantContext
 
 Tenant-scoped application use cases receive an explicit tenant context:
@@ -29,7 +34,7 @@ TenantContext(
 The API resolves this context server-side from:
 
 - Authenticated user.
-- Active organization from the route.
+- Active organization from the route parameter.
 - Active membership.
 - Code-defined permission map.
 
@@ -67,6 +72,22 @@ Global uniqueness remains appropriate for normalized user email addresses and ot
 ## Cross-Tenant Errors
 
 When a resource belongs to another organization and revealing its existence would leak tenant information, the API returns `404`. When the tenant resource is visible but the authenticated user lacks a permission on it, the API returns `403`.
+
+Tenant-context resolution returns a generic `403` when the selected organization
+does not exist, is inactive, lacks a usable membership for the authenticated
+user, or the membership is invited, suspended, or removed. The application keeps
+the internal distinction in transport-neutral authorization errors for future
+audit logging, while public HTTP responses avoid unnecessary organization and
+membership enumeration.
+
+The initial HTTP proof endpoints are:
+
+- `GET /api/v1/organizations/{organization_id}/tenancy/context`
+- `GET /api/v1/organizations/{organization_id}/tenancy/authorized-probe`
+
+They exist to validate tenant-context and permission dependency composition and
+do not implement organization switching, membership administration, dashboards,
+or document access.
 
 ## Architecture Boundaries
 

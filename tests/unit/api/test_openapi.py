@@ -22,11 +22,34 @@ def test_openapi_metadata_and_health_routes_are_registered() -> None:
     assert "/api/v1/auth/login" in schema["paths"]
     assert "/api/v1/auth/refresh" in schema["paths"]
     assert "/api/v1/auth/me" in schema["paths"]
+    context_path = "/api/v1/organizations/{organization_id}/tenancy/context"
+    probe_path = "/api/v1/organizations/{organization_id}/tenancy/authorized-probe"
+    assert context_path in schema["paths"]
+    assert probe_path in schema["paths"]
     assert "HTTPBearer" in schema["components"]["securitySchemes"]
     assert schema["paths"]["/api/v1/auth/me"]["get"]["security"] == [{"HTTPBearer": []}]
     assert schema["paths"]["/api/v1/auth/logout"]["post"]["security"] == [{"HTTPBearer": []}]
     assert schema["paths"]["/api/v1/auth/logout-all"]["post"]["security"] == [{"HTTPBearer": []}]
+    assert schema["paths"][context_path]["get"]["security"] == [{"HTTPBearer": []}]
+    assert schema["paths"][probe_path]["get"]["security"] == [{"HTTPBearer": []}]
+    organization_parameter = schema["paths"][context_path]["get"]["parameters"][0]
+    assert organization_parameter["name"] == "organization_id"
+    assert organization_parameter["in"] == "path"
+    assert organization_parameter["required"] is True
+    assert organization_parameter["schema"]["format"] == "uuid"
+    assert all(
+        parameter["in"] != "header"
+        for parameter in schema["paths"][context_path]["get"]["parameters"]
+    )
+    assert "system probe" in schema["paths"][context_path]["get"]["summary"].casefold()
+    assert "system probe" in schema["paths"][probe_path]["get"]["summary"].casefold()
+    assert "401" in schema["paths"][context_path]["get"]["responses"]
+    assert "403" in schema["paths"][context_path]["get"]["responses"]
+    assert "401" in schema["paths"][probe_path]["get"]["responses"]
+    assert "403" in schema["paths"][probe_path]["get"]["responses"]
     assert "requestBody" not in schema["paths"]["/api/v1/auth/refresh"]["post"]
+    assert "requestBody" not in schema["paths"][context_path]["get"]
+    assert "requestBody" not in schema["paths"][probe_path]["get"]
     login_schema = schema["components"]["schemas"]["LoginRequest"]
     assert login_schema["properties"]["password"]["format"] == "password"
     assert login_schema["properties"]["password"]["writeOnly"] is True
