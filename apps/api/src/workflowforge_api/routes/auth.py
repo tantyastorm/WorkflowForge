@@ -9,6 +9,7 @@ from workflowforge_application.identity import (
     ExpiredRefreshTokenError,
     InvalidCredentialsError,
     InvalidRefreshTokenError,
+    ListUserOrganizations,
     LogoutAllSessions,
     LogoutAllSessionsCommand,
     LogoutSession,
@@ -44,6 +45,7 @@ from workflowforge_api.dependencies import (
     get_authentication_rate_limiter,
     get_current_principal,
     get_independent_audit_recorder,
+    get_list_user_organizations,
     get_logout_all_sessions,
     get_logout_session,
     get_refresh_session,
@@ -53,6 +55,7 @@ from workflowforge_api.dependencies import (
 from workflowforge_api.exception_handlers import ApiError
 from workflowforge_api.middleware import current_correlation_id
 from workflowforge_api.schemas.auth import (
+    AuthOrganizationResponse,
     LoginRequest,
     LogoutAllResponse,
     LogoutResponse,
@@ -287,6 +290,37 @@ async def me(
         issued_at=principal.issued_at,
         expires_at=principal.expires_at,
     )
+
+
+@router.get(
+    "/organizations",
+    response_model=list[AuthOrganizationResponse],
+    summary="List current user organizations",
+    responses={
+        401: {"description": "Authentication is required."},
+    },
+)
+async def organizations(
+    principal: Annotated[VerifiedAccessPrincipal, Depends(get_current_principal)],
+    list_user_organizations: Annotated[
+        ListUserOrganizations,
+        Depends(get_list_user_organizations),
+    ],
+) -> list[AuthOrganizationResponse]:
+    """Return organizations available to the authenticated principal."""
+
+    summaries = await list_user_organizations(principal.user_id)
+    return [
+        AuthOrganizationResponse(
+            id=summary.id,
+            name=summary.name,
+            slug=summary.slug.value,
+            membership_id=summary.membership_id,
+            membership_role=summary.membership_role,
+            membership_status=summary.membership_status,
+        )
+        for summary in summaries
+    ]
 
 
 def _require_csrf(request: Request, settings: Settings) -> None:

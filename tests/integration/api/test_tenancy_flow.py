@@ -68,6 +68,10 @@ def test_tenant_context_http_flow_enforces_cross_tenant_isolation() -> None:
             f"/api/v1/organizations/{ORG_A_ID}/tenancy/context",
             headers=_bearer(access_a),
         )
+        orgs_initial = client.get(
+            "/api/v1/auth/organizations",
+            headers=_bearer(access_a),
+        )
         org_a_probe = client.get(
             f"/api/v1/organizations/{ORG_A_ID}/tenancy/authorized-probe",
             headers=_bearer(access_a),
@@ -84,6 +88,17 @@ def test_tenant_context_http_flow_enforces_cross_tenant_isolation() -> None:
         assert org_a_context.json()["membership_id"] == str(MEMBERSHIP_A_ID)
         assert org_a_context.json()["role"] == "owner"
         assert "security.manage" in org_a_context.json()["permissions"]
+        assert orgs_initial.status_code == 200
+        assert orgs_initial.json() == [
+            {
+                "id": str(ORG_A_ID),
+                "name": "ORG-A",
+                "slug": "org-a",
+                "membership_id": str(MEMBERSHIP_A_ID),
+                "membership_role": "owner",
+                "membership_status": "active",
+            }
+        ]
         assert org_a_probe.status_code == 200
         assert org_b_without_membership.status_code == 403
         assert org_b_without_membership.json()["error"]["code"] == "tenant_access_denied"
@@ -100,6 +115,10 @@ def test_tenant_context_http_flow_enforces_cross_tenant_isolation() -> None:
             f"/api/v1/organizations/{ORG_B_ID}/tenancy/context",
             headers=_bearer(access_a),
         )
+        orgs_with_b = client.get(
+            "/api/v1/auth/organizations",
+            headers=_bearer(access_a),
+        )
         org_b_probe_denied = client.get(
             f"/api/v1/organizations/{ORG_B_ID}/tenancy/authorized-probe",
             headers=_bearer(access_a),
@@ -110,6 +129,8 @@ def test_tenant_context_http_flow_enforces_cross_tenant_isolation() -> None:
         assert org_b_context.json()["membership_id"] == str(MEMBERSHIP_B_ID)
         assert org_b_context.json()["role"] == "auditor"
         assert "audit.read" in org_b_context.json()["permissions"]
+        assert [item["id"] for item in orgs_with_b.json()] == [str(ORG_A_ID), str(ORG_B_ID)]
+        assert "permissions" not in orgs_with_b.json()[1]
         assert org_b_probe_denied.status_code == 403
         assert org_b_probe_denied.json()["error"]["code"] == "permission_denied"
         assert _audit_count(settings, AuditEventType.AUTHORIZATION_PERMISSION_DENIED) == 1
@@ -128,6 +149,13 @@ def test_tenant_context_http_flow_enforces_cross_tenant_isolation() -> None:
         assert suspended_b.status_code == 403
         assert org_a_still_available.status_code == 200
         assert org_a_still_available.json()["organization_id"] == str(ORG_A_ID)
+        assert [
+            item["id"]
+            for item in client.get(
+                "/api/v1/auth/organizations",
+                headers=_bearer(access_a),
+            ).json()
+        ] == [str(ORG_A_ID)]
 
         _remove_org_b_membership(settings)
         removed_b = client.get(
@@ -142,7 +170,13 @@ def test_tenant_context_http_flow_enforces_cross_tenant_isolation() -> None:
             f"/api/v1/organizations/{ORG_A_ID}/tenancy/context",
             headers=_bearer(login_b["access_token"]),
         )
+        user_b_orgs = client.get(
+            "/api/v1/auth/organizations",
+            headers=_bearer(login_b["access_token"]),
+        )
         assert user_b_org_a.status_code == 403
+        assert user_b_orgs.status_code == 200
+        assert user_b_orgs.json() == []
 
         _deactivate_org_a(settings)
         inactive_org_a = client.get(
@@ -167,9 +201,15 @@ def test_tenant_context_http_flow_enforces_cross_tenant_isolation() -> None:
             f"/api/v1/organizations/{ORG_A_ID}/tenancy/context",
             headers=_bearer(access_a),
         )
+        revoked_orgs = client.get(
+            "/api/v1/auth/organizations",
+            headers=_bearer(access_a),
+        )
         assert logout.status_code == 200
         assert revoked_context.status_code == 401
         assert revoked_context.headers["www-authenticate"] == "Bearer"
+        assert revoked_orgs.status_code == 401
+        assert revoked_orgs.headers["www-authenticate"] == "Bearer"
 
 
 def _settings() -> Settings:

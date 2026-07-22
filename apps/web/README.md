@@ -30,10 +30,18 @@ Open:
 http://127.0.0.1:5173
 ```
 
-The first real feature route is:
+Public health remains available at:
 
 ```text
 http://127.0.0.1:5173/status
+```
+
+Authenticated operators use:
+
+```text
+http://127.0.0.1:5173/login
+http://127.0.0.1:5173/app/system
+http://127.0.0.1:5173/app/tenant-context
 ```
 
 Quality commands:
@@ -54,9 +62,25 @@ Copy `apps/web/.env.example` to an untracked local `.env` if needed:
 
 ```dotenv
 VITE_API_BASE_URL=http://localhost:8000
+VITE_CSRF_COOKIE_NAME=workflowforge_csrf
+VITE_CSRF_HEADER_NAME=X-CSRF-Token
 ```
 
-The value is parsed with Zod, must be an absolute HTTP or HTTPS URL, and is normalized without trailing slashes. Do not put backend secrets, database URLs, Redis URLs, object-storage credentials, or API keys in Vite environment variables.
+The API base URL is parsed with Zod, must be an absolute HTTP or HTTPS URL, and is normalized without trailing slashes. CSRF names must match the backend auth settings. Do not put backend secrets, database URLs, Redis URLs, object-storage credentials, API keys, access tokens, or refresh tokens in Vite environment variables.
+
+## Authentication
+
+The React auth foundation uses the backend Phase 2 session endpoints:
+
+- `POST /api/v1/auth/login`
+- `POST /api/v1/auth/refresh`
+- `POST /api/v1/auth/logout`
+- `POST /api/v1/auth/logout-all`
+- `GET /api/v1/auth/me`
+- `GET /api/v1/auth/organizations`
+- `GET /api/v1/organizations/{organization_id}/tenancy/context`
+
+The access token is kept in memory only. The refresh token stays in the backend-issued HttpOnly cookie and is never read by React. Refresh, logout, and logout-all requests include credentials and copy the readable CSRF cookie into the configured CSRF header. The selected organization ID may be stored in localStorage, but it is revalidated through the current user's organization list and tenant-context endpoint during session restoration.
 
 ## System Status
 
@@ -79,4 +103,4 @@ Then open `http://127.0.0.1:5173/status`. Local frontend env overrides belong in
 
 ## Current Scope
 
-The app currently provides a neutral route-ready shell, provider composition, typed environment parsing, an API-client foundation, loading/error components, an error boundary, and the operational system-status page. It does not include authentication, dashboards, workflow screens, document screens, charts, business UI, generated API clients, or final UI branding.
+The app currently provides a neutral operator shell, provider composition, typed environment parsing, an API-client foundation, session restoration, login/logout/logout-all, current-user organization selection, permission-aware route guards, loading/error components, an error boundary, the operational system-status page, and a tenant-context diagnostic page. It does not include public registration, password reset, membership administration, organization creation, workflow screens, document screens, charts, generated API clients, or final UI branding.

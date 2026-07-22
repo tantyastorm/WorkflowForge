@@ -427,7 +427,7 @@ def _assert_refresh_cookie(cookies: dict[str, dict[str, str | bool]], *, value: 
 def _assert_csrf_cookie(cookies: dict[str, dict[str, str | bool]]) -> None:
     cookie = cookies["workflowforge_csrf"]
     assert cookie["value"]
-    assert cookie["path"] == "/api/v1/auth"
+    assert cookie["path"] == "/"
     assert cookie["max-age"] == "2592000"
     assert cookie["samesite"] == "lax"
     assert cookie["httponly"] is False
@@ -443,7 +443,8 @@ def _assert_cleared_cookie(
 ) -> None:
     cookie = cookies[name]
     assert cookie["value"] == ""
-    assert cookie["path"] == "/api/v1/auth"
+    expected_path = "/" if name == "workflowforge_csrf" else "/api/v1/auth"
+    assert cookie["path"] == expected_path
     assert cookie["max-age"] == "0"
     assert cookie["samesite"] == "lax"
     assert cookie["httponly"] is httponly

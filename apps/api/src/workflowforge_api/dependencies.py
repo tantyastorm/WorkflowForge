@@ -25,6 +25,7 @@ from workflowforge_application.identity import (
     AuthenticateUser,
     ExpiredAccessTokenError,
     InvalidAccessTokenError,
+    ListUserOrganizations,
     LogoutAllSessions,
     LogoutSession,
     RefreshSession,
@@ -227,6 +228,17 @@ def get_resolve_tenant_context(
     """Compose the tenant-context resolver."""
 
     return ResolveTenantContext(
+        organizations=SqlAlchemyOrganizationRepository(session),
+        memberships=SqlAlchemyMembershipRepository(session),
+    )
+
+
+def get_list_user_organizations(
+    session: Annotated[AsyncSession, Depends(get_database_session)],
+) -> ListUserOrganizations:
+    """Compose the current-user organization listing query."""
+
+    return ListUserOrganizations(
         organizations=SqlAlchemyOrganizationRepository(session),
         memberships=SqlAlchemyMembershipRepository(session),
     )

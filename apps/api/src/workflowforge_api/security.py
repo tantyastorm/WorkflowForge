@@ -79,7 +79,7 @@ def set_csrf_cookie(
         key=settings.csrf_cookie_name,
         value=value,
         max_age=max_age,
-        path=settings.refresh_cookie_path,
+        path="/",
         secure=settings.refresh_cookie_secure,
         httponly=False,
         samesite=settings.refresh_cookie_samesite,
@@ -98,7 +98,7 @@ def clear_auth_cookies(response: Response, settings: AuthSettings) -> None:
     )
     response.delete_cookie(
         key=settings.csrf_cookie_name,
-        path=settings.refresh_cookie_path,
+        path="/",
         secure=settings.refresh_cookie_secure,
         httponly=False,
         samesite=settings.refresh_cookie_samesite,

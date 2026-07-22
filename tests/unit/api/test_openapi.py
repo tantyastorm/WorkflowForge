@@ -22,12 +22,14 @@ def test_openapi_metadata_and_health_routes_are_registered() -> None:
     assert "/api/v1/auth/login" in schema["paths"]
     assert "/api/v1/auth/refresh" in schema["paths"]
     assert "/api/v1/auth/me" in schema["paths"]
+    assert "/api/v1/auth/organizations" in schema["paths"]
     context_path = "/api/v1/organizations/{organization_id}/tenancy/context"
     probe_path = "/api/v1/organizations/{organization_id}/tenancy/authorized-probe"
     assert context_path in schema["paths"]
     assert probe_path in schema["paths"]
     assert "HTTPBearer" in schema["components"]["securitySchemes"]
     assert schema["paths"]["/api/v1/auth/me"]["get"]["security"] == [{"HTTPBearer": []}]
+    assert schema["paths"]["/api/v1/auth/organizations"]["get"]["security"] == [{"HTTPBearer": []}]
     assert schema["paths"]["/api/v1/auth/logout"]["post"]["security"] == [{"HTTPBearer": []}]
     assert schema["paths"]["/api/v1/auth/logout-all"]["post"]["security"] == [{"HTTPBearer": []}]
     assert schema["paths"][context_path]["get"]["security"] == [{"HTTPBearer": []}]
@@ -48,6 +50,7 @@ def test_openapi_metadata_and_health_routes_are_registered() -> None:
     assert "401" in schema["paths"][probe_path]["get"]["responses"]
     assert "403" in schema["paths"][probe_path]["get"]["responses"]
     assert "requestBody" not in schema["paths"]["/api/v1/auth/refresh"]["post"]
+    assert "requestBody" not in schema["paths"]["/api/v1/auth/organizations"]["get"]
     assert "requestBody" not in schema["paths"][context_path]["get"]
     assert "requestBody" not in schema["paths"][probe_path]["get"]
     login_schema = schema["components"]["schemas"]["LoginRequest"]

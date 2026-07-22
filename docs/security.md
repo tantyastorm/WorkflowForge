@@ -212,3 +212,14 @@ exceed 90 days.
 ## Architecture Boundaries
 
 Security domain rules belong in `packages/domain` when they are product invariants. Security policies, authentication use cases, authorization checks, and security ports belong in `packages/application` or `packages/contracts` as appropriate. Cryptography, token signing, digesting, persistence, and Redis-backed rate-limiting adapters belong in `packages/infrastructure`. HTTP headers, cookies, CSRF validation, Origin validation, and dependency composition belong in `apps/api`. Frontend token handling and organization UX belong in `apps/web`.
+
+## Known Migration Metadata Drift
+
+As of commit `030a1c3`, `uv run alembic check` reports pre-existing
+autogenerate drift for unique-index metadata on `documents.content_hash`,
+`organizations.slug`, and `users.normalized_email`, plus the
+`security_audit_events.metadata` server default. The same drift is present on
+the parent commit before the Phase 2 Step 13 React authentication work, and the
+repository migration integration tests remain the source of truth until the
+metadata/modeling mismatch is resolved in a dedicated migration-maintenance
+change.

@@ -4,6 +4,7 @@ from datetime import datetime
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, SecretStr
+from workflowforge_domain.identity import MembershipStatus, Role
 
 
 class LoginRequest(BaseModel):
@@ -35,6 +36,19 @@ class MeResponse(BaseModel):
     session_id: UUID
     issued_at: datetime
     expires_at: datetime
+
+
+class AuthOrganizationResponse(BaseModel):
+    """Current user's safe organization selection item."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    id: UUID
+    name: str
+    slug: str
+    membership_id: UUID
+    membership_role: Role
+    membership_status: MembershipStatus
 
 
 class LogoutResponse(BaseModel):

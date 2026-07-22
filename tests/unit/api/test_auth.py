@@ -12,6 +12,7 @@ from workflowforge_api.dependencies import (
     get_authentication_rate_limiter,
     get_current_principal,
     get_independent_audit_recorder,
+    get_list_user_organizations,
     get_logout_all_sessions,
     get_logout_session,
     get_refresh_session,
@@ -31,6 +32,7 @@ from workflowforge_application.identity import (
     RefreshSessionCommand,
     StartUserSessionCommand,
     TokenPair,
+    UserOrganizationSummary,
     VerifiedAccessPrincipal,
 )
 from workflowforge_application.security import (
@@ -39,7 +41,7 @@ from workflowforge_application.security import (
     RateLimitUnavailableError,
 )
 from workflowforge_domain.audit import AuditEvent
-from workflowforge_domain.identity import SessionId
+from workflowforge_domain.identity import MembershipStatus, OrganizationSlug, Role, SessionId
 from workflowforge_infrastructure.config import Environment, Settings
 
 NOW = datetime(2026, 1, 2, 3, 4, 5, tzinfo=UTC)
@@ -388,6 +390,48 @@ def test_me_maps_invalid_and_expired_bearer_tokens_to_401() -> None:
     assert expired.json()["error"]["code"] == "authentication_failed"
 
 
+def test_organizations_requires_bearer_and_returns_safe_current_user_items() -> None:
+    app = _app()
+    verifier = FakeVerifyAccessToken(_claims())
+    app.dependency_overrides[get_verify_access_token] = lambda: verifier
+    query = FakeListUserOrganizations(
+        [
+            UserOrganizationSummary(
+                id=UUID("22222222-2222-4222-8222-222222222222"),
+                name="Alpha Operations",
+                slug=OrganizationSlug("alpha-ops"),
+                membership_id=UUID("33333333-3333-4333-8333-333333333333"),
+                membership_role=Role.OWNER,
+                membership_status=MembershipStatus.ACTIVE,
+            )
+        ]
+    )
+    app.dependency_overrides[get_list_user_organizations] = lambda: query
+
+    with TestClient(app) as client:
+        missing = client.get("/api/v1/auth/organizations")
+        response = client.get(
+            "/api/v1/auth/organizations",
+            headers={"Authorization": "Bearer access-1"},
+        )
+
+    assert missing.status_code == 401
+    assert missing.headers["www-authenticate"] == "Bearer"
+    assert response.status_code == 200
+    assert verifier.tokens == ["access-1"]
+    assert query.user_ids == [USER_ID]
+    assert response.json() == [
+        {
+            "id": "22222222-2222-4222-8222-222222222222",
+            "name": "Alpha Operations",
+            "slug": "alpha-ops",
+            "membership_id": "33333333-3333-4333-8333-333333333333",
+            "membership_role": "owner",
+            "membership_status": "active",
+        }
+    ]
+
+
 def test_logout_revokes_current_session_and_clears_cookies() -> None:
     app = _app()
     logout = FakeLogoutSession()
@@ -576,6 +620,16 @@ class FakeLogoutAllSessions:
         return LogoutAllSessionsResult(revoked_sessions=self.revoked_sessions)
 
 
+class FakeListUserOrganizations:
+    def __init__(self, result: list[UserOrganizationSummary]) -> None:
+        self.result = result
+        self.user_ids: list[UUID] = []
+
+    async def __call__(self, user_id: UUID) -> tuple[UserOrganizationSummary, ...]:
+        self.user_ids.append(user_id)
+        return tuple(self.result)
+
+
 def _token_pair(access_token: str, refresh_token: str) -> TokenPair:
     return TokenPair(
         access_token=access_token,
@@ -652,7 +706,7 @@ def _assert_refresh_cookie(cookies: dict[str, dict[str, str | bool]], *, value: 
 def _assert_csrf_cookie(cookies: dict[str, dict[str, str | bool]]) -> None:
     cookie = cookies["workflowforge_csrf"]
     assert cookie["value"]
-    assert cookie["path"] == "/api/v1/auth"
+    assert cookie["path"] == "/"
     assert cookie["max-age"] == "2592000"
     assert cookie["samesite"] == "lax"
     assert cookie["httponly"] is False
@@ -668,7 +722,8 @@ def _assert_cleared_cookie(
 ) -> None:
     cookie = cookies[name]
     assert cookie["value"] == ""
-    assert cookie["path"] == "/api/v1/auth"
+    expected_path = "/" if name == "workflowforge_csrf" else "/api/v1/auth"
+    assert cookie["path"] == expected_path
     assert cookie["max-age"] == "0"
     assert cookie["samesite"] == "lax"
     assert cookie["httponly"] is httponly

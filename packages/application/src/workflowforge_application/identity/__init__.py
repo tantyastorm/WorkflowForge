@@ -32,6 +32,10 @@ from workflowforge_application.identity.errors import (
     TokenIssuanceError,
     UserAuthenticationDisabledError,
 )
+from workflowforge_application.identity.organizations import (
+    ListUserOrganizations,
+    UserOrganizationSummary,
+)
 from workflowforge_application.identity.ports import (
     AccessTokenCodec,
     Clock,
@@ -94,6 +98,7 @@ __all__ = [
     "LogoutAllSessionsResult",
     "LogoutSession",
     "LogoutSessionCommand",
+    "ListUserOrganizations",
     "MalformedStoredCredentialError",
     "MembershipRepository",
     "MissingIdentityReferenceError",
@@ -121,6 +126,7 @@ __all__ = [
     "TokenPair",
     "TransactionManager",
     "UserAuthenticationDisabledError",
+    "UserOrganizationSummary",
     "UserRepository",
     "VerifiedAccessPrincipal",
     "VerifyAccessToken",
