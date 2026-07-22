@@ -1,5 +1,14 @@
 """Framework-independent WorkflowForge domain package."""
 
+from workflowforge_domain.audit import (
+    AuditDomainError,
+    AuditEvent,
+    AuditEventType,
+    AuditOutcome,
+    AuditRequestContext,
+    InvalidAuditEvent,
+    InvalidAuditMetadata,
+)
 from workflowforge_domain.documents import (
     ContentHash,
     Document,
@@ -10,17 +19,68 @@ from workflowforge_domain.documents import (
     StorageObjectKey,
 )
 from workflowforge_domain.errors import DomainError
+from workflowforge_domain.identity import (
+    EmailAddress,
+    IdentityDomainError,
+    InvalidDisplayName,
+    InvalidEmailAddress,
+    InvalidIdentifier,
+    InvalidMembershipTransition,
+    InvalidOrganizationName,
+    InvalidOrganizationSlug,
+    InvalidTimestamp,
+    LastActiveOwnerViolation,
+    Membership,
+    MembershipAlreadyRemoved,
+    MembershipMutation,
+    MembershipPolicy,
+    MembershipStatus,
+    Organization,
+    OrganizationSlug,
+    Permission,
+    Role,
+    User,
+    permissions_for_role,
+)
 
 __all__ = [
     "ContentHash",
+    "AuditDomainError",
+    "AuditEvent",
+    "AuditEventType",
+    "AuditOutcome",
+    "AuditRequestContext",
     "Document",
     "DocumentError",
     "DocumentId",
     "DocumentStatus",
     "DomainError",
+    "EmailAddress",
+    "IdentityDomainError",
     "InvalidDocumentTransitionError",
+    "InvalidAuditEvent",
+    "InvalidAuditMetadata",
+    "InvalidDisplayName",
+    "InvalidEmailAddress",
+    "InvalidIdentifier",
+    "InvalidMembershipTransition",
+    "InvalidOrganizationName",
+    "InvalidOrganizationSlug",
+    "InvalidTimestamp",
+    "LastActiveOwnerViolation",
+    "Membership",
+    "MembershipAlreadyRemoved",
+    "MembershipMutation",
+    "MembershipPolicy",
+    "MembershipStatus",
+    "Organization",
+    "OrganizationSlug",
+    "Permission",
+    "Role",
     "StorageObjectKey",
+    "User",
     "__version__",
+    "permissions_for_role",
 ]
 
 __version__ = "0.1.0a1"

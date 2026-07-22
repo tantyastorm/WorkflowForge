@@ -1,0 +1,91 @@
+"""Identity application errors."""
+
+from workflowforge_application.errors import ApplicationError
+
+
+class IdentityApplicationError(ApplicationError):
+    """Base class for identity application failures."""
+
+
+class DuplicateNormalizedEmailError(IdentityApplicationError):
+    """Raised when a normalized email already exists."""
+
+
+class DuplicateOrganizationSlugError(IdentityApplicationError):
+    """Raised when an organization slug already exists."""
+
+
+class DuplicateOrganizationMembershipError(IdentityApplicationError):
+    """Raised when a user already has membership in an organization."""
+
+
+class MissingIdentityReferenceError(IdentityApplicationError):
+    """Raised when a referenced user or organization is missing."""
+
+
+class InvalidCredentialsError(IdentityApplicationError):
+    """Raised when email/password authentication fails generically."""
+
+
+class UserAuthenticationDisabledError(IdentityApplicationError):
+    """Raised when a disabled user provides otherwise valid credentials."""
+
+
+class InvalidPasswordError(IdentityApplicationError):
+    """Raised when a plaintext password violates application password policy."""
+
+
+class DuplicatePasswordCredentialError(IdentityApplicationError):
+    """Raised when a password credential conflicts with an existing credential."""
+
+
+class MalformedStoredCredentialError(IdentityApplicationError):
+    """Raised when durable credential state cannot be safely interpreted."""
+
+
+class DuplicateRefreshTokenDigestError(IdentityApplicationError):
+    """Raised when a refresh-token digest already exists."""
+
+
+class SessionNotFoundError(IdentityApplicationError):
+    """Raised when an authenticated session is missing."""
+
+
+class SessionExpiredError(IdentityApplicationError):
+    """Raised when an authenticated session is expired."""
+
+
+class SessionRevokedError(IdentityApplicationError):
+    """Raised when an authenticated session has been revoked."""
+
+
+class RefreshRotationConflictError(IdentityApplicationError):
+    """Raised when refresh-token rotation state is stale or invalid."""
+
+
+class InvalidAccessTokenError(IdentityApplicationError):
+    """Raised when an access token is malformed or invalid."""
+
+
+class ExpiredAccessTokenError(InvalidAccessTokenError):
+    """Raised when an access token has expired."""
+
+
+class InvalidRefreshTokenError(IdentityApplicationError):
+    """Raised when a refresh token cannot be used."""
+
+
+class ExpiredRefreshTokenError(InvalidRefreshTokenError):
+    """Raised when a refresh token has expired."""
+
+
+class RefreshTokenReplayError(InvalidRefreshTokenError):
+    """Raised when refresh-token replay is detected."""
+
+
+class SessionOwnershipError(IdentityApplicationError):
+    """Raised when a session does not belong to the expected user."""
+
+
+class TokenIssuanceError(IdentityApplicationError):
+    """Raised when a token cannot be issued."""

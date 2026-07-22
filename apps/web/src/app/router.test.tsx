@@ -54,4 +54,11 @@ describe("router", () => {
 
     expect(screen.getByRole("heading", { name: "Page not found" })).toBeInTheDocument();
   });
+
+  it("redirects anonymous protected routes to login without rendering protected content", async () => {
+    renderApp({ route: "/app/system" });
+
+    expect(await screen.findByRole("heading", { name: "Sign in" })).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "System status" })).not.toBeInTheDocument();
+  });
 });

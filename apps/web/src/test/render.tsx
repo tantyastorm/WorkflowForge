@@ -5,6 +5,7 @@ import { createMemoryRouter, RouterProvider } from "react-router";
 
 import { AppErrorBoundary } from "../app/error-boundary";
 import { appRoutes } from "../app/router";
+import { AuthProvider } from "../features/auth/auth-context";
 import { createQueryClient } from "../lib/query-client";
 
 type RenderAppOptions = RenderOptions & {
@@ -18,7 +19,9 @@ export function renderApp({ route = "/", ...options }: RenderAppOptions = {}) {
   return render(
     <AppErrorBoundary>
       <QueryClientProvider client={queryClient}>
-        <RouterProvider router={router} />
+        <AuthProvider restoreSessionOnMount={false}>
+          <RouterProvider router={router} />
+        </AuthProvider>
       </QueryClientProvider>
     </AppErrorBoundary>,
     options,
@@ -30,7 +33,9 @@ export function renderWithProviders(ui: ReactElement, options?: RenderOptions) {
 
   return render(
     <AppErrorBoundary>
-      <QueryClientProvider client={queryClient}>{ui}</QueryClientProvider>
+      <QueryClientProvider client={queryClient}>
+        <AuthProvider restoreSessionOnMount={false}>{ui}</AuthProvider>
+      </QueryClientProvider>
     </AppErrorBoundary>,
     options,
   );

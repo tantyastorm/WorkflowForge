@@ -11,6 +11,9 @@ dependencies = [
   "workflowforge-infrastructure",
 ]
 
+[project.scripts]
+workflowforge-bootstrap-owner = "workflowforge_api.bootstrap:main"
+
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"

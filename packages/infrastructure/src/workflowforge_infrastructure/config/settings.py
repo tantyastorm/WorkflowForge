@@ -1,8 +1,9 @@
 """WorkflowForge settings foundation."""
 
+import re
 from enum import StrEnum
 from functools import lru_cache
-from typing import Annotated
+from typing import Annotated, Literal
 from urllib.parse import urlparse
 
 from pydantic import Field, SecretStr, field_validator, model_validator
@@ -127,6 +128,46 @@ class RedisSettings(BaseSettings):
         if value == "":
             return None
         return value
+
+
+class RateLimitFailurePolicy(StrEnum):
+    """Rate-limit backend failure policies."""
+
+    OPEN = "open"
+    CLOSED = "closed"
+
+
+class RateLimitSettings(BaseSettings):
+    """Validated authentication rate-limit settings."""
+
+    model_config = SettingsConfigDict(
+        env_prefix="WORKFLOWFORGE_RATE_LIMIT_",
+        extra="forbid",
+        validate_default=True,
+    )
+
+    login_identifier_threshold: int = Field(default=5, gt=0, le=100)
+    login_client_threshold: int = Field(default=20, gt=0, le=500)
+    login_window_seconds: int = Field(default=900, gt=0, le=86_400)
+    refresh_client_threshold: int = Field(default=10, gt=0, le=500)
+    refresh_window_seconds: int = Field(default=300, gt=0, le=86_400)
+    failure_policy: RateLimitFailurePolicy = RateLimitFailurePolicy.OPEN
+
+
+class CleanupSettings(BaseSettings):
+    """Validated authentication cleanup settings."""
+
+    model_config = SettingsConfigDict(
+        env_prefix="WORKFLOWFORGE_CLEANUP_",
+        extra="forbid",
+        validate_default=True,
+    )
+
+    session_batch_limit: int = Field(default=500, gt=0, le=10_000)
+    expired_session_retention_seconds: int = Field(default=604_800, ge=0)
+    revoked_session_retention_seconds: int = Field(default=2_592_000, ge=0)
+    schedule_enabled: bool = False
+    schedule_seconds: int = Field(default=3600, gt=0)
 
 
 class S3Settings(BaseSettings):
@@ -264,6 +305,109 @@ class SchedulerSettings(BaseSettings):
         return self
 
 
+DEFAULT_JWT_SIGNING_SECRET = "workflowforge-development-jwt-secret-change-before-production-0001"
+_COOKIE_NAME_PATTERN = re.compile(r"^[A-Za-z0-9._-]+$")
+_CSRF_HEADER_PATTERN = re.compile(r"^[A-Za-z0-9-]+$")
+
+
+class AuthSettings(BaseSettings):
+    """Validated authentication and session lifecycle settings."""
+
+    model_config = SettingsConfigDict(
+        env_prefix="WORKFLOWFORGE_AUTH_",
+        extra="forbid",
+        validate_default=True,
+    )
+
+    jwt_algorithm: str = "HS256"
+    jwt_issuer: str = Field(default="workflowforge", min_length=1)
+    jwt_audience: str = Field(default="workflowforge-api", min_length=1)
+    jwt_signing_secret: SecretStr = Field(default=SecretStr(DEFAULT_JWT_SIGNING_SECRET))
+    access_token_lifetime_seconds: int = Field(default=900, gt=0)
+    refresh_token_lifetime_seconds: int = Field(default=2_592_000, gt=0)
+    session_lifetime_seconds: int = Field(default=2_592_000, gt=0)
+    refresh_token_bytes: int = Field(default=32, ge=32)
+    refresh_cookie_name: str = Field(default="workflowforge_refresh", min_length=1)
+    refresh_cookie_path: str = Field(default="/api/v1/auth", min_length=1)
+    refresh_cookie_secure: bool = False
+    refresh_cookie_samesite: Literal["lax", "strict", "none"] = "lax"
+    csrf_cookie_name: str = Field(default="workflowforge_csrf", min_length=1)
+    csrf_header_name: str = Field(default="X-CSRF-Token", min_length=1)
+
+    @field_validator("jwt_algorithm")
+    @classmethod
+    def validate_jwt_algorithm(cls, value: str) -> str:
+        """Require the single supported JWT algorithm."""
+
+        if value != "HS256":
+            msg = "JWT algorithm must be HS256"
+            raise ValueError(msg)
+        return value
+
+    @field_validator("jwt_signing_secret")
+    @classmethod
+    def validate_jwt_signing_secret(cls, value: SecretStr) -> SecretStr:
+        """Require a strong symmetric signing secret."""
+
+        if len(value.get_secret_value()) < 32:
+            msg = "JWT signing secret must be at least 32 characters"
+            raise ValueError(msg)
+        return value
+
+    @field_validator("refresh_cookie_name", "csrf_cookie_name")
+    @classmethod
+    def validate_cookie_name(cls, value: str) -> str:
+        """Require simple portable cookie names."""
+
+        if _COOKIE_NAME_PATTERN.fullmatch(value) is None:
+            msg = "Cookie names may contain only letters, numbers, dots, underscores, and hyphens"
+            raise ValueError(msg)
+        return value
+
+    @field_validator("refresh_cookie_path")
+    @classmethod
+    def validate_cookie_path(cls, value: str) -> str:
+        """Require an absolute cookie path."""
+
+        if not value.startswith("/"):
+            msg = "Refresh cookie path must begin with /"
+            raise ValueError(msg)
+        return value
+
+    @field_validator("refresh_cookie_samesite")
+    @classmethod
+    def validate_refresh_cookie_samesite(cls, value: str) -> str:
+        """Require a supported SameSite value."""
+
+        normalized = value.lower()
+        if normalized not in {"lax", "strict", "none"}:
+            msg = "Refresh cookie SameSite must be lax, strict, or none"
+            raise ValueError(msg)
+        return normalized
+
+    @field_validator("csrf_header_name")
+    @classmethod
+    def validate_csrf_header_name(cls, value: str) -> str:
+        """Require a simple HTTP header name for CSRF proof."""
+
+        if _CSRF_HEADER_PATTERN.fullmatch(value) is None:
+            msg = "CSRF header name may contain only letters, numbers, and hyphens"
+            raise ValueError(msg)
+        return value
+
+    @model_validator(mode="after")
+    def validate_lifetime_policy(self) -> "AuthSettings":
+        """Require refresh-token lifetime not to exceed session lifetime."""
+
+        if self.refresh_token_lifetime_seconds > self.session_lifetime_seconds:
+            msg = "Refresh token lifetime must not exceed session lifetime"
+            raise ValueError(msg)
+        if self.refresh_cookie_name == self.csrf_cookie_name:
+            msg = "Refresh and CSRF cookie names must be distinct"
+            raise ValueError(msg)
+        return self
+
+
 class Settings(BaseSettings):
     """Validated process settings shared by backend packages."""
 
@@ -291,6 +435,9 @@ class Settings(BaseSettings):
     s3: S3Settings = Field(default_factory=lambda: S3Settings())
     celery: CelerySettings = Field(default_factory=lambda: CelerySettings())
     scheduler: SchedulerSettings = Field(default_factory=lambda: SchedulerSettings())
+    auth: AuthSettings = Field(default_factory=lambda: AuthSettings())
+    rate_limit: RateLimitSettings = Field(default_factory=lambda: RateLimitSettings())
+    cleanup: CleanupSettings = Field(default_factory=lambda: CleanupSettings())
 
     @field_validator("cors_origins", mode="before")
     @classmethod
@@ -300,6 +447,45 @@ class Settings(BaseSettings):
         if isinstance(value, str):
             return tuple(origin.strip() for origin in value.split(",") if origin.strip())
         return value
+
+    @model_validator(mode="after")
+    def validate_production_auth_secret(self) -> "Settings":
+        """Prevent the development JWT secret in production."""
+
+        if (
+            self.environment is Environment.PRODUCTION
+            and self.auth.jwt_signing_secret.get_secret_value() == DEFAULT_JWT_SIGNING_SECRET
+        ):
+            msg = "Production requires an explicit JWT signing secret"
+            raise ValueError(msg)
+        if self.environment is Environment.PRODUCTION and not self.auth.refresh_cookie_secure:
+            msg = "Production requires Secure refresh cookies"
+            raise ValueError(msg)
+        if self.environment is Environment.PRODUCTION and self.debug:
+            msg = "Production requires debug mode to be disabled"
+            raise ValueError(msg)
+        if (
+            self.environment is Environment.PRODUCTION
+            and not self.database.password.get_secret_value()
+        ):
+            msg = "Production requires a database password"
+            raise ValueError(msg)
+        if self.environment is Environment.PRODUCTION and self.redis.password is None:
+            msg = "Production requires Redis authentication"
+            raise ValueError(msg)
+        if (
+            self.environment is Environment.PRODUCTION
+            and self.rate_limit.failure_policy is not RateLimitFailurePolicy.CLOSED
+        ):
+            msg = "Production requires fail-closed rate limiting"
+            raise ValueError(msg)
+        if self.auth.access_token_lifetime_seconds > 3600:
+            msg = "Access-token lifetime must not exceed one hour"
+            raise ValueError(msg)
+        if self.auth.session_lifetime_seconds > 7_776_000:
+            msg = "Session lifetime must not exceed 90 days"
+            raise ValueError(msg)
+        return self
 
     @field_validator("cors_origins")
     @classmethod

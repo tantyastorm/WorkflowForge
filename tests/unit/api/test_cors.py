@@ -14,6 +14,7 @@ def test_configured_origin_receives_cors_headers() -> None:
         response = client.get("/health/live", headers={"Origin": "http://localhost:5173"})
 
     assert response.headers["access-control-allow-origin"] == "http://localhost:5173"
+    assert response.headers["access-control-allow-credentials"] == "true"
 
 
 def test_loopback_frontend_origin_receives_cors_headers() -> None:

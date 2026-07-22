@@ -2,11 +2,15 @@
 
 from workflowforge_infrastructure.config.settings import (
     ApiSettings,
+    AuthSettings,
     CelerySettings,
+    CleanupSettings,
     DatabaseSettings,
     Environment,
     LogFormat,
     LogLevel,
+    RateLimitFailurePolicy,
+    RateLimitSettings,
     RedisSettings,
     S3Settings,
     SchedulerSettings,
@@ -16,11 +20,15 @@ from workflowforge_infrastructure.config.settings import (
 
 __all__ = [
     "ApiSettings",
+    "AuthSettings",
     "CelerySettings",
+    "CleanupSettings",
     "DatabaseSettings",
     "Environment",
     "LogFormat",
     "LogLevel",
+    "RateLimitFailurePolicy",
+    "RateLimitSettings",
     "RedisSettings",
     "S3Settings",
     "SchedulerSettings",

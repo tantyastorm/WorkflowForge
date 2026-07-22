@@ -2,7 +2,9 @@
 
 This document defines the planned WorkflowForge V1 scope at a high level. It distinguishes V1 capabilities from later possibilities and from the narrower Phase 1 implementation boundary.
 
-V1 scope is planned product scope, not current implemented functionality.
+V1 scope is planned product scope. Phase 1 delivered the platform foundation,
+and Phase 2 delivered the first identity, session, tenancy, authorization,
+security audit, and operator authentication frontend foundation.
 
 ## V1 Capability Groups
 
@@ -16,7 +18,10 @@ The platform foundation includes migrations, configuration, health checks, struc
 
 V1 includes owner and operator roles, authentication, authorization, a protected operator console, and basic audit attribution. The goal is to protect workflow operations and record who performed sensitive actions.
 
-The full implementation design is intentionally deferred. This document defines the product need, not the authentication framework or permission model.
+Phase 2 implements the initial version of this need with first-owner bootstrap,
+password authentication, durable sessions, rotating refresh tokens, server-side
+organization membership resolution, code-defined role permissions, tenant proof
+routes, security audit events, and the React operator login/session shell.
 
 ### Document Intake and Storage
 

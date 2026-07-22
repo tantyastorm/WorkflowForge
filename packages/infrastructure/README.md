@@ -63,3 +63,63 @@ Infrastructure implements the application document repository port with SQLAlche
 - creation and update timestamps.
 
 The table enforces non-negative byte size, valid initial lifecycle statuses, unique content hashes, and unique storage object keys. The repository maps rows to domain objects and translates duplicate inserts into sanitized application errors. It does not expose ORM models outside infrastructure and does not write file bytes to MinIO.
+
+## Identity Persistence
+
+Infrastructure implements application repository ports for users, organizations, and memberships with SQLAlchemy. The `users` table stores display email, normalized email, display name, active state, and lifecycle timestamps. The `organizations` table stores organization name, slug, active state, and lifecycle timestamps. The `memberships` table stores user-to-organization membership role, status, and lifecycle timestamps.
+
+Role and membership status values are persisted as bounded strings with database check constraints rather than PostgreSQL native enums. This keeps public enum values stable while avoiding enum-alter migration friction.
+
+Membership repository methods require organization identity for tenant-owned membership lookups where appropriate. Repositories map rows to validated domain entities, translate duplicate email, slug, and membership conflicts into application errors, and do not commit transactions implicitly.
+
+Password credentials are persisted in `password_credentials`, keyed one-to-one
+by `user_id` with a cascading foreign key to `users`. The SQLAlchemy password
+credential repository is the only normal persistence path for password hashes;
+ordinary user repository methods do not return credential state.
+
+## Password Hashing
+
+Infrastructure provides an Argon2id `PasswordHasher` adapter using
+`argon2-cffi`. Hashes use the library format that embeds salt, algorithm, and
+parameters. Verification handles mismatched, malformed, and unsupported hashes
+safely by returning `False`, and the adapter exposes a dummy hash for
+missing-account authentication paths.
+
+Infrastructure also provides a SHA-256 refresh-token digest adapter for
+server-generated high-entropy opaque refresh tokens. This adapter is deliberately
+separate from password hashing and supports deterministic lookup plus
+constant-time digest verification.
+
+Infrastructure provides an HS256 JWT access-token codec using PyJWT. It validates
+the configured issuer and audience, requires `sub`, `sid`, `jti`, `iat`, `exp`,
+`iss`, and `aud`, restricts algorithms to HS256, and maps JWT library failures to
+sanitized application errors. It also provides secure refresh-token generation
+using Python `secrets`, a UTC clock adapter, and a UUID4 generator adapter.
+
+## Session Persistence
+
+Infrastructure implements the application session repository with PostgreSQL
+tables for `auth_sessions` and `refresh_tokens`. A user may have multiple
+sessions. Sessions store user ID, creation/update/expiry timestamps, and
+revocation timestamp. Refresh-token rows store digests only, session ID, token
+family ID, generation, issued/expiry/use/revocation timestamps, and replacement
+lineage.
+
+Refresh rotation inserts the replacement token and consumes the expected current
+token in one transaction using constrained SQL update semantics. The update
+requires the expected session ID, digest, generation, unused/unrevoked token
+state, and active session state. Stale rotation attempts raise a sanitized
+application conflict. Revoke-one and revoke-all mark sessions and current
+refresh credentials revoked without committing implicitly.
+
+## Audit Persistence
+
+Infrastructure implements audit ports with `security_audit_events` in
+PostgreSQL. The table stores typed event names, outcomes, actor/user,
+organization, session, correlation/request metadata, bounded source IP and user
+agent, structured JSONB metadata, and timestamps.
+
+Audit foreign keys use `ON DELETE SET NULL` so hard-deleting users,
+organizations, or sessions does not cascade away audit evidence. The repository
+exposes append and bounded newest-first query operations only; it does not expose
+update or delete methods and does not commit transactions implicitly.

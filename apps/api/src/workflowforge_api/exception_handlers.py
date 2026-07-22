@@ -15,13 +15,51 @@ from workflowforge_api.schemas.errors import ErrorDetail, ErrorResponse
 _LOGGER = structlog.get_logger("workflowforge_api.errors")
 
 
+class ApiError(Exception):
+    """Transport-level API error with a stable public response."""
+
+    def __init__(
+        self,
+        *,
+        status_code: int,
+        code: str,
+        message: str,
+        headers: dict[str, str] | None = None,
+    ) -> None:
+        super().__init__(code)
+        self.status_code = status_code
+        self.code = code
+        self.message = message
+        self.headers = headers or {}
+
+
 def register_exception_handlers(app: FastAPI) -> None:
     """Register consistent API error responses."""
 
+    app.add_exception_handler(ApiError, _api_error_handler)
     app.add_exception_handler(ApplicationError, _known_application_error_handler)
     app.add_exception_handler(DomainError, _known_application_error_handler)
     app.add_exception_handler(RequestValidationError, _request_validation_error_handler)
     app.add_exception_handler(Exception, _unexpected_error_handler)
+
+
+async def _api_error_handler(request: Request, exc: Exception) -> JSONResponse:
+    if not isinstance(exc, ApiError):
+        raise TypeError
+    correlation_id = _correlation_id(request)
+    _LOGGER.info(
+        "api_error",
+        error_code=exc.code,
+        status_code=exc.status_code,
+        correlation_id=correlation_id,
+    )
+    return _error_response(
+        status_code=exc.status_code,
+        code=exc.code,
+        message=exc.message,
+        correlation_id=correlation_id,
+        headers=exc.headers,
+    )
 
 
 async def _known_application_error_handler(_request: Request, exc: Exception) -> JSONResponse:
@@ -87,6 +125,7 @@ def _error_response(
     code: str,
     message: str,
     correlation_id: str | None,
+    headers: dict[str, str] | None = None,
 ) -> JSONResponse:
     content: dict[str, Any] = ErrorResponse(
         error=ErrorDetail(
@@ -95,4 +134,4 @@ def _error_response(
             correlation_id=correlation_id,
         )
     ).model_dump()
-    return JSONResponse(status_code=status_code, content=content)
+    return JSONResponse(status_code=status_code, content=content, headers=headers)

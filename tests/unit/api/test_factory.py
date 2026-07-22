@@ -4,8 +4,18 @@ from typing import Any
 
 from fastapi.routing import APIRoute
 from fastapi.testclient import TestClient
+from pydantic import SecretStr
 from workflowforge_api.factory import create_app
-from workflowforge_infrastructure.config import ApiSettings, Environment, Settings
+from workflowforge_infrastructure.config import (
+    ApiSettings,
+    AuthSettings,
+    DatabaseSettings,
+    Environment,
+    RateLimitFailurePolicy,
+    RateLimitSettings,
+    RedisSettings,
+    Settings,
+)
 
 
 def test_multiple_app_instances_have_independent_state() -> None:
@@ -59,6 +69,27 @@ def test_docs_enabled_and_disabled_behavior() -> None:
         assert disabled_client.get("/openapi.json").status_code == 404
 
 
+def test_security_headers_are_added_to_api_responses() -> None:
+    app = create_app(Settings(environment=Environment.TEST))
+
+    with TestClient(app) as client:
+        response = client.get("/health/live")
+
+    assert response.headers["x-content-type-options"] == "nosniff"
+    assert response.headers["referrer-policy"] == "no-referrer"
+    assert response.headers["x-frame-options"] == "DENY"
+    assert "strict-transport-security" not in response.headers
+
+
+def test_hsts_is_enabled_only_for_production() -> None:
+    app = create_app(_production_settings())
+
+    with TestClient(app) as client:
+        response = client.get("/health/live")
+
+    assert response.headers["strict-transport-security"] == ("max-age=31536000; includeSubDomains")
+
+
 def test_app_construction_performs_no_external_connection() -> None:
     app = create_app(Settings(environment=Environment.TEST))
 
@@ -74,3 +105,17 @@ def _registered_route_paths(routes: list[Any]) -> list[str]:
         if original_router is not None:
             paths.extend(_registered_route_paths(list(original_router.routes)))
     return paths
+
+
+def _production_settings() -> Settings:
+    return Settings(
+        environment=Environment.PRODUCTION,
+        debug=False,
+        database=DatabaseSettings(password=SecretStr("database-secret")),
+        redis=RedisSettings(password=SecretStr("redis-secret")),
+        auth=AuthSettings(
+            jwt_signing_secret=SecretStr("production-secret-with-at-least-32-characters"),
+            refresh_cookie_secure=True,
+        ),
+        rate_limit=RateLimitSettings(failure_policy=RateLimitFailurePolicy.CLOSED),
+    )

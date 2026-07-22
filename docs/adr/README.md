@@ -32,3 +32,7 @@ Accepted ADRs are not silently rewritten. Small clarifications are acceptable, b
 ## Records
 
 - [ADR 0001: Adopt a modular monolith with separate runtime processes](0001-modular-monolith.md)
+- [ADR 0002: Authentication and session model](0002-authentication-and-session-model.md)
+- [ADR 0003: Tenant isolation strategy](0003-tenant-isolation-strategy.md)
+- [ADR 0004: Role and permission model](0004-role-and-permission-model.md)
+- [ADR 0005: Audit event storage](0005-audit-event-storage.md)
