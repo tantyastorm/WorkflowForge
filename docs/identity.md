@@ -135,9 +135,10 @@ remains authentication-only and does not require or return tenant selection.
 
 ## Registration And Bootstrap
 
-WorkflowForge does not expose public registration in Phase 2. Password reset,
-MFA, invitation acceptance, and frontend authentication UX are separate future
-steps.
+WorkflowForge does not expose public registration in Phase 2. The React frontend
+implements the operator login, session restore, organization listing, and logout
+flow. Password reset, MFA, invitation acceptance, membership administration, and
+organization administration are separate future steps.
 
 First setup uses `workflowforge-bootstrap-owner`. The command creates exactly
 one user, one organization, one active owner membership, one password
@@ -169,5 +170,5 @@ WorkflowForge should not create a generic `AuthService` that owns identity, sess
 
 Phase 2 persists users with display email, normalized email, display name, active state, and lifecycle timestamps. Normalized email remains the uniqueness key and uses the same `email.strip().casefold()` behavior as the domain value object.
 
-Registration routes, password reset, MFA, tenant selection, and frontend
-authentication UX remain outside this step.
+Registration routes, password reset, MFA, membership administration, and
+organization administration remain outside Phase 2.

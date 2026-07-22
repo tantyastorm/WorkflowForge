@@ -1,6 +1,6 @@
 # Authorization
 
-This document records the planned WorkflowForge authorization foundation for Phase 2. It is architectural documentation, not an implementation record.
+This document records the WorkflowForge authorization foundation implemented for Phase 2.
 
 ## Model
 

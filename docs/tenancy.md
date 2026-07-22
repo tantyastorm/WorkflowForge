@@ -1,6 +1,6 @@
 # Tenancy
 
-This document records the planned WorkflowForge tenancy foundation for Phase 2. It is architectural documentation, not an implementation record.
+This document records the WorkflowForge tenancy foundation implemented for Phase 2.
 
 ## Tenant Context Transport
 

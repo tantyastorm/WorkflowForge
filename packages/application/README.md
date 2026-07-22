@@ -84,6 +84,11 @@ revocation, and then raises `RefreshTokenReplayError` so replay evidence cannot
 be lost by normal exception rollback. Logout and logout-all commit successful
 revocations and roll back failures.
 
+`ListUserOrganizations` exposes the authenticated user's active organization
+memberships for the React operator console. It returns safe organization and
+membership metadata without embedding tenant context, permission matrices, or
+authorization decisions into access tokens.
+
 ## Audit Ports
 
 The audit application boundary defines append-only `AuditRecorder` and bounded

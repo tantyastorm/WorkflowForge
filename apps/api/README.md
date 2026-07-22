@@ -47,6 +47,7 @@ Implemented authentication routes:
 - `POST /api/v1/auth/logout` requires a bearer access token and CSRF proof, revokes the current session, and clears auth cookies.
 - `POST /api/v1/auth/logout-all` requires a bearer access token and CSRF proof, revokes every active session for the current user, and clears local auth cookies.
 - `GET /api/v1/auth/me` requires a bearer access token and returns minimal authenticated principal metadata.
+- `GET /api/v1/auth/organizations` requires a bearer access token and returns the active organizations available to the current authenticated user.
 
 Refresh tokens are never returned in JSON. HTTP cookie handling, CSRF validation, bearer parsing, and error mapping live in this API package; identity lifecycle rules remain in `packages/application`.
 
