@@ -8,6 +8,7 @@ from uuid import UUID
 import pytest
 from alembic import command
 from alembic.config import Config
+from sqlalchemy import func, select
 from workflowforge_application.identity import (
     AccessTokenClaims,
     IssuedRefreshToken,
@@ -16,6 +17,7 @@ from workflowforge_application.identity import (
     RefreshTokenReplayError,
     SessionLifecyclePolicy,
 )
+from workflowforge_domain.audit import AuditEventType
 from workflowforge_domain.identity import (
     AuthSession,
     EmailAddress,
@@ -26,6 +28,8 @@ from workflowforge_domain.identity import (
     SessionId,
     User,
 )
+from workflowforge_infrastructure.audit import SqlAlchemyAuditRepository
+from workflowforge_infrastructure.audit.models import SecurityAuditEventRecord
 from workflowforge_infrastructure.database import (
     SqlAlchemyTransactionManager,
     create_async_database_engine,
@@ -102,6 +106,7 @@ async def test_refresh_replay_revocation_commits_before_error_is_returned() -> N
                 transaction=SqlAlchemyTransactionManager(use_case_session),
                 clock=FakeClock(REPLAYED_AT),
                 ids=FakeIdGenerator(),
+                audit=SqlAlchemyAuditRepository(use_case_session),
                 policy=SessionLifecyclePolicy(),
             )
 
@@ -132,6 +137,14 @@ async def test_refresh_replay_revocation_commits_before_error_is_returned() -> N
             assert other_session is not None
             assert other_token is not None
             assert other_token.revoked_at is None
+            assert (
+                await _audit_count(
+                    verifier_session,
+                    AuditEventType.SESSION_REFRESH_REPLAY_DETECTED,
+                )
+                == 1
+            )
+            assert await _audit_count(verifier_session, AuditEventType.SESSION_REVOKED) == 1
         finally:
             await verifier_session.close()
     finally:
@@ -148,8 +161,14 @@ class FakeClock:
 
 
 class FakeIdGenerator:
+    def __init__(self) -> None:
+        self._values = [
+            ACCESS_JTI,
+            UUID("88888888-8888-4888-8888-888888888881"),
+        ]
+
     def new_uuid(self) -> UUID:
-        return ACCESS_JTI
+        return self._values.pop(0)
 
 
 class FakeRefreshTokenGenerator:
@@ -221,3 +240,12 @@ def _alembic_config() -> Config:
     config = Config("alembic.ini")
     config.attributes["database_settings"] = require_postgresql()
     return config
+
+
+async def _audit_count(session: object, event_type: AuditEventType) -> int:
+    result = await session.execute(  # type: ignore[attr-defined]
+        select(func.count())
+        .select_from(SecurityAuditEventRecord)
+        .where(SecurityAuditEventRecord.event_type == event_type.value)
+    )
+    return int(result.scalar_one())

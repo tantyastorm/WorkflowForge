@@ -1,5 +1,14 @@
 """Framework-independent WorkflowForge domain package."""
 
+from workflowforge_domain.audit import (
+    AuditDomainError,
+    AuditEvent,
+    AuditEventType,
+    AuditOutcome,
+    AuditRequestContext,
+    InvalidAuditEvent,
+    InvalidAuditMetadata,
+)
 from workflowforge_domain.documents import (
     ContentHash,
     Document,
@@ -36,6 +45,11 @@ from workflowforge_domain.identity import (
 
 __all__ = [
     "ContentHash",
+    "AuditDomainError",
+    "AuditEvent",
+    "AuditEventType",
+    "AuditOutcome",
+    "AuditRequestContext",
     "Document",
     "DocumentError",
     "DocumentId",
@@ -44,6 +58,8 @@ __all__ = [
     "EmailAddress",
     "IdentityDomainError",
     "InvalidDocumentTransitionError",
+    "InvalidAuditEvent",
+    "InvalidAuditMetadata",
     "InvalidDisplayName",
     "InvalidEmailAddress",
     "InvalidIdentifier",

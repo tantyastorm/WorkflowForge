@@ -80,6 +80,12 @@ the internal distinction in transport-neutral authorization errors for future
 audit logging, while public HTTP responses avoid unnecessary organization and
 membership enumeration.
 
+Tenant access denials, inactive memberships, inactive organizations, and
+permission denials emit durable audit events with actor user ID, selected
+organization ID, request correlation metadata, and safe enum-style reason
+metadata. Successful tenant-context resolution and successful permission checks
+are not audited in Phase 2 to avoid high-volume noise.
+
 The initial HTTP proof endpoints are:
 
 - `GET /api/v1/organizations/{organization_id}/tenancy/context`

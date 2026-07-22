@@ -11,6 +11,7 @@ from fastapi import Depends, FastAPI
 from fastapi.testclient import TestClient
 from workflowforge_api.dependencies import (
     get_current_principal,
+    get_independent_audit_recorder,
     get_resolve_tenant_context,
     require_all_permissions,
     require_any_permission,
@@ -24,6 +25,7 @@ from workflowforge_application.authorization import (
     TenantMembershipInactive,
 )
 from workflowforge_application.identity import VerifiedAccessPrincipal
+from workflowforge_domain.audit import AuditEvent
 from workflowforge_domain.identity import MembershipStatus, Permission, Role, SessionId
 from workflowforge_infrastructure.config import Environment, Settings
 
@@ -54,6 +56,7 @@ def test_tenant_context_route_returns_safe_context_for_active_membership() -> No
 
 def test_tenant_context_requires_valid_bearer_before_resolution() -> None:
     app = create_app(Settings(environment=Environment.TEST))
+    app.dependency_overrides[get_independent_audit_recorder] = NullAuditRecorder
     resolver = FakeResolveTenantContext(_context())
     app.dependency_overrides[get_resolve_tenant_context] = lambda: resolver
 
@@ -183,6 +186,7 @@ def _app_with_resolver(resolver: FakeResolveTenantContext) -> FastAPI:
     app = create_app(Settings(environment=Environment.TEST))
     app.dependency_overrides[get_current_principal] = _principal
     app.dependency_overrides[get_resolve_tenant_context] = lambda: resolver
+    app.dependency_overrides[get_independent_audit_recorder] = NullAuditRecorder
     return app
 
 
@@ -219,3 +223,11 @@ class FakeResolveTenantContext:
         if isinstance(self._result, Exception):
             raise self._result
         return self._result
+
+
+class NullAuditRecorder:
+    def __init__(self) -> None:
+        self.events: list[AuditEvent] = []
+
+    async def record(self, event: AuditEvent) -> None:
+        self.events.append(event)

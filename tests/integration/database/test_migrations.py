@@ -44,6 +44,7 @@ def test_migrations_upgrade_from_empty_downgrade_and_reupgrade() -> None:
             "alembic_version",
             "documents",
             "auth_sessions",
+            "security_audit_events",
             "memberships",
             "organizations",
             "password_credentials",
@@ -52,7 +53,7 @@ def test_migrations_upgrade_from_empty_downgrade_and_reupgrade() -> None:
         }
         with engine.connect() as connection:
             version_rows = connection.exec_driver_sql("SELECT version_num FROM alembic_version")
-            assert version_rows.scalar_one() == "0006_sessions"
+            assert version_rows.scalar_one() == "0007_security_audit_events"
     finally:
         engine.dispose()
 
@@ -288,6 +289,53 @@ def test_session_tables_have_expected_columns_constraints_and_indexes_at_head() 
         and foreign_key["options"].get("ondelete") == "CASCADE"
         for foreign_key in token_foreign_keys
     )
+
+
+@pytest.mark.integration
+def test_security_audit_events_table_has_expected_columns_indexes_and_fk_policy() -> None:
+    settings = require_postgresql()
+    command.upgrade(_alembic_config(settings), "head")
+
+    engine = create_sync_migration_engine(settings)
+    try:
+        inspector = inspect(engine)
+        columns = {
+            column["name"]: column for column in inspector.get_columns("security_audit_events")
+        }
+        indexes = {index["name"] for index in inspector.get_indexes("security_audit_events")}
+        foreign_keys = inspector.get_foreign_keys("security_audit_events")
+    finally:
+        engine.dispose()
+
+    assert set(columns) == {
+        "id",
+        "event_type",
+        "outcome",
+        "occurred_at",
+        "actor_user_id",
+        "organization_id",
+        "session_id",
+        "request_id",
+        "source_ip",
+        "user_agent",
+        "metadata",
+        "created_at",
+    }
+    assert columns["metadata"]["nullable"] is False
+    assert columns["event_type"]["nullable"] is False
+    assert "ix_security_audit_events_occurred_at" in indexes
+    assert "ix_security_audit_events_actor_user_id" in indexes
+    assert "ix_security_audit_events_organization_id" in indexes
+    assert "ix_security_audit_events_event_type_outcome" in indexes
+    assert {
+        (foreign_key["referred_table"], tuple(foreign_key["constrained_columns"]))
+        for foreign_key in foreign_keys
+    } == {
+        ("users", ("actor_user_id",)),
+        ("organizations", ("organization_id",)),
+        ("auth_sessions", ("session_id",)),
+    }
+    assert all(foreign_key["options"].get("ondelete") == "SET NULL" for foreign_key in foreign_keys)
 
 
 @pytest.mark.integration

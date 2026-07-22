@@ -123,6 +123,12 @@ cookie-only and are not present in request or response JSON. The `/me` response
 returns only user ID, session ID, issue time, and expiry time; tenant context,
 roles, and permissions remain separate.
 
+Authentication, refresh, replay, logout, logout-all, and password credential
+changes emit durable structured audit events. Audit events may include actor
+user ID and session ID where known, but they never include plaintext passwords,
+password hashes, raw access tokens, raw refresh tokens, refresh digests, cookies,
+CSRF values, or authorization headers.
+
 Tenant-scoped HTTP routes resolve organization context from the route parameter
 and durable membership state after bearer authentication succeeds. `/auth/me`
 remains authentication-only and does not require or return tenant selection.

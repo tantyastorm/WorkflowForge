@@ -67,6 +67,12 @@ API documentation is available at `/docs`, `/redoc`, and `/openapi.json` when `W
 
 Every response includes `X-Correlation-ID`. Incoming safe correlation IDs are preserved; missing or malformed values are replaced and bound to request-local structured logging context.
 
+Security audit request metadata reuses that correlation ID as `request_id`.
+Audit context stores only the direct ASGI client IP when it parses as an IP
+address and a bounded `User-Agent` string. Proxy forwarding headers, cookies,
+authorization headers, request bodies, and full header sets are not stored in
+audit events.
+
 Smoke-test a running local Compose API:
 
 ```powershell

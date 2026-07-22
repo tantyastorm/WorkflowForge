@@ -83,3 +83,17 @@ revokes the affected session and current refresh credential, commits that
 revocation, and then raises `RefreshTokenReplayError` so replay evidence cannot
 be lost by normal exception rollback. Logout and logout-all commit successful
 revocations and roll back failures.
+
+## Audit Ports
+
+The audit application boundary defines append-only `AuditRecorder` and bounded
+`AuditQuery` ports. Use cases may record security-significant success events in
+their current transaction. API composition owns independent audit transactions
+for authentication failures, refresh failures, tenant denials, and permission
+denials so those events can survive failed requests when audit persistence is
+available. Independent audit persistence failures are logged by the API adapter
+without replacing the original public authentication or authorization response.
+
+Audit contracts use typed domain event names and outcomes. They do not accept
+raw headers, request bodies, passwords, tokens, token digests, cookie values, or
+exception reprs.

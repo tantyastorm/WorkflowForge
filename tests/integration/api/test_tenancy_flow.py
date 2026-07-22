@@ -10,8 +10,10 @@ import pytest
 from alembic import command
 from alembic.config import Config
 from fastapi.testclient import TestClient
+from sqlalchemy import func, select
 from workflowforge_api.factory import create_app
 from workflowforge_application.identity import SetUserPassword, SetUserPasswordCommand
+from workflowforge_domain.audit import AuditEventType
 from workflowforge_domain.identity import (
     EmailAddress,
     Membership,
@@ -20,6 +22,7 @@ from workflowforge_domain.identity import (
     Role,
     User,
 )
+from workflowforge_infrastructure.audit.models import SecurityAuditEventRecord
 from workflowforge_infrastructure.config import Environment, Settings
 from workflowforge_infrastructure.database import (
     create_async_database_engine,
@@ -109,6 +112,8 @@ def test_tenant_context_http_flow_enforces_cross_tenant_isolation() -> None:
         assert "audit.read" in org_b_context.json()["permissions"]
         assert org_b_probe_denied.status_code == 403
         assert org_b_probe_denied.json()["error"]["code"] == "permission_denied"
+        assert _audit_count(settings, AuditEventType.AUTHORIZATION_PERMISSION_DENIED) == 1
+        assert _membership_role(settings, MEMBERSHIP_B_ID) == Role.AUDITOR
 
         _suspend_org_b_membership(settings)
         suspended_b = client.get(
@@ -289,6 +294,45 @@ async def _deactivate_org_a_async(settings: Settings) -> None:
         assert organization is not None
         await organizations.update(organization.deactivate(now=NOW + timedelta(minutes=5)))
         await session.commit()
+    finally:
+        await session.close()
+        await dispose_async_engine(engine)
+
+
+def _audit_count(settings: Settings, event_type: AuditEventType) -> int:
+    return asyncio.run(_audit_count_async(settings, event_type))
+
+
+async def _audit_count_async(settings: Settings, event_type: AuditEventType) -> int:
+    engine = create_async_database_engine(settings.database)
+    session = create_async_session_factory(engine)()
+    try:
+        result = await session.execute(
+            select(func.count())
+            .select_from(SecurityAuditEventRecord)
+            .where(SecurityAuditEventRecord.event_type == event_type.value)
+        )
+        return int(result.scalar_one())
+    finally:
+        await session.close()
+        await dispose_async_engine(engine)
+
+
+def _membership_role(settings: Settings, membership_id: UUID) -> Role:
+    return asyncio.run(_membership_role_async(settings, membership_id))
+
+
+async def _membership_role_async(settings: Settings, membership_id: UUID) -> Role:
+    engine = create_async_database_engine(settings.database)
+    session = create_async_session_factory(engine)()
+    try:
+        memberships = SqlAlchemyMembershipRepository(session)
+        membership = await memberships.get_by_id(
+            organization_id=ORG_B_ID,
+            membership_id=membership_id,
+        )
+        assert membership is not None
+        return membership.role
     finally:
         await session.close()
         await dispose_async_engine(engine)

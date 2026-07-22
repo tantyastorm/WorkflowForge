@@ -10,6 +10,7 @@ from fastapi import Depends, Path, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.datastructures import State
+from workflowforge_application.audit import AuditRecorder
 from workflowforge_application.authorization import (
     AuthorizationPolicy,
     PermissionDenied,
@@ -32,7 +33,9 @@ from workflowforge_application.identity import (
     VerifiedAccessPrincipal,
     VerifyAccessToken,
 )
+from workflowforge_domain.audit import AuditEventType, AuditOutcome
 from workflowforge_domain.identity import Permission
+from workflowforge_infrastructure.audit import SqlAlchemyAuditRepository
 from workflowforge_infrastructure.config import Settings
 from workflowforge_infrastructure.database import (
     SqlAlchemyTransactionManager,
@@ -53,6 +56,11 @@ from workflowforge_infrastructure.identity import (
     Uuid4Generator,
 )
 
+from workflowforge_api.audit import (
+    IndependentSqlAlchemyAuditRecorder,
+    audit_request_context,
+    record_independent_audit_event,
+)
 from workflowforge_api.exception_handlers import ApiError
 
 
@@ -146,6 +154,7 @@ def get_start_user_session(
         transaction=SqlAlchemyTransactionManager(session),
         clock=SystemClock(),
         ids=Uuid4Generator(),
+        audit=SqlAlchemyAuditRepository(session),
         policy=_session_policy(settings),
     )
 
@@ -164,6 +173,7 @@ def get_refresh_session(
         transaction=SqlAlchemyTransactionManager(session),
         clock=SystemClock(),
         ids=Uuid4Generator(),
+        audit=SqlAlchemyAuditRepository(session),
         policy=_session_policy(settings),
     )
 
@@ -177,6 +187,8 @@ def get_logout_session(
         sessions=SqlAlchemySessionRepository(session),
         transaction=SqlAlchemyTransactionManager(session),
         clock=SystemClock(),
+        ids=Uuid4Generator(),
+        audit=SqlAlchemyAuditRepository(session),
     )
 
 
@@ -189,6 +201,8 @@ def get_logout_all_sessions(
         sessions=SqlAlchemySessionRepository(session),
         transaction=SqlAlchemyTransactionManager(session),
         clock=SystemClock(),
+        ids=Uuid4Generator(),
+        audit=SqlAlchemyAuditRepository(session),
     )
 
 
@@ -216,19 +230,30 @@ def get_resolve_tenant_context(
     )
 
 
+def get_independent_audit_recorder(request: Request) -> AuditRecorder:
+    """Return an audit recorder that commits independently of request state."""
+
+    return IndependentSqlAlchemyAuditRecorder(request.app.state.database_engine)
+
+
 async def get_current_principal(
     credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(bearer_scheme)],
     verify_access_token: Annotated[VerifyAccessToken, Depends(get_verify_access_token)],
+    request: Request,
+    audit: Annotated[AuditRecorder, Depends(get_independent_audit_recorder)],
 ) -> VerifiedAccessPrincipal:
     """Return the current authenticated bearer principal."""
 
     if credentials is None:
+        await _record_access_token_rejected(request=request, audit=audit)
         raise _authentication_error()
     if credentials.scheme.casefold() != "bearer" or not credentials.credentials:
+        await _record_access_token_rejected(request=request, audit=audit)
         raise _authentication_error()
     try:
         return await verify_access_token(credentials.credentials)
     except (ExpiredAccessTokenError, InvalidAccessTokenError) as exc:
+        await _record_access_token_rejected(request=request, audit=audit)
         raise _authentication_error() from exc
 
 
@@ -244,6 +269,8 @@ async def get_current_tenant_context(
         ResolveTenantContext,
         Depends(get_resolve_tenant_context),
     ],
+    request: Request,
+    audit: Annotated[AuditRecorder, Depends(get_independent_audit_recorder)],
 ) -> TenantContext:
     """Resolve the current authenticated user into the selected organization."""
 
@@ -254,23 +281,55 @@ async def get_current_tenant_context(
                 organization_id=organization_id,
             )
         )
-    except (TenantAccessDenied, TenantMembershipInactive) as exc:
+    except TenantMembershipInactive as exc:
+        await record_independent_audit_event(
+            audit=audit,
+            event_id=Uuid4Generator().new_uuid(),
+            event_type=AuditEventType.TENANCY_INACTIVE_MEMBERSHIP,
+            outcome=AuditOutcome.DENIED,
+            actor_user_id=exc.user_id,
+            organization_id=exc.organization_id,
+            session_id=principal.session_id.value,
+            request_context=audit_request_context(request),
+            metadata={"membership_status": exc.status.value},
+        )
+        raise _tenant_access_error() from exc
+    except TenantAccessDenied as exc:
+        event_type = (
+            AuditEventType.TENANCY_INACTIVE_ORGANIZATION
+            if exc.reason == "organization inactive"
+            else AuditEventType.TENANCY_ACCESS_DENIED
+        )
+        await record_independent_audit_event(
+            audit=audit,
+            event_id=Uuid4Generator().new_uuid(),
+            event_type=event_type,
+            outcome=AuditOutcome.DENIED,
+            actor_user_id=exc.user_id,
+            organization_id=exc.organization_id,
+            session_id=principal.session_id.value,
+            request_context=audit_request_context(request),
+            metadata={"reason": exc.reason},
+        )
         raise _tenant_access_error() from exc
 
 
 def require_permission(
     permission: Permission,
-) -> Callable[[TenantContext], Awaitable[TenantContext]]:
+) -> Callable[..., Awaitable[TenantContext]]:
     """Create a dependency requiring one typed permission."""
 
     _validate_permissions((permission,))
 
     async def dependency(
         context: Annotated[TenantContext, Depends(get_current_tenant_context)],
+        request: Request,
+        audit: Annotated[AuditRecorder, Depends(get_independent_audit_recorder)],
     ) -> TenantContext:
         try:
             AuthorizationPolicy().require(context, permission)
         except PermissionDenied as exc:
+            await _record_permission_denied(request=request, audit=audit, exc=exc)
             raise _permission_denied_error() from exc
         return context
 
@@ -279,17 +338,20 @@ def require_permission(
 
 def require_any_permission(
     *permissions: Permission,
-) -> Callable[[TenantContext], Awaitable[TenantContext]]:
+) -> Callable[..., Awaitable[TenantContext]]:
     """Create a dependency requiring at least one typed permission."""
 
     _validate_permissions(permissions)
 
     async def dependency(
         context: Annotated[TenantContext, Depends(get_current_tenant_context)],
+        request: Request,
+        audit: Annotated[AuditRecorder, Depends(get_independent_audit_recorder)],
     ) -> TenantContext:
         try:
             AuthorizationPolicy().require_any(context, permissions)
         except PermissionDenied as exc:
+            await _record_permission_denied(request=request, audit=audit, exc=exc)
             raise _permission_denied_error() from exc
         return context
 
@@ -298,17 +360,20 @@ def require_any_permission(
 
 def require_all_permissions(
     *permissions: Permission,
-) -> Callable[[TenantContext], Awaitable[TenantContext]]:
+) -> Callable[..., Awaitable[TenantContext]]:
     """Create a dependency requiring every typed permission."""
 
     _validate_permissions(permissions)
 
     async def dependency(
         context: Annotated[TenantContext, Depends(get_current_tenant_context)],
+        request: Request,
+        audit: Annotated[AuditRecorder, Depends(get_independent_audit_recorder)],
     ) -> TenantContext:
         try:
             AuthorizationPolicy().require_all(context, permissions)
         except PermissionDenied as exc:
+            await _record_permission_denied(request=request, audit=audit, exc=exc)
             raise _permission_denied_error() from exc
         return context
 
@@ -347,3 +412,35 @@ def _validate_permissions(permissions: tuple[Permission, ...]) -> None:
     if any(not isinstance(permission, Permission) for permission in permissions):
         msg = "Permission dependencies require Permission values."
         raise TypeError(msg)
+
+
+async def _record_access_token_rejected(
+    *,
+    request: Request,
+    audit: AuditRecorder,
+) -> None:
+    await record_independent_audit_event(
+        audit=audit,
+        event_id=Uuid4Generator().new_uuid(),
+        event_type=AuditEventType.AUTHENTICATION_ACCESS_TOKEN_REJECTED,
+        outcome=AuditOutcome.FAILURE,
+        request_context=audit_request_context(request),
+    )
+
+
+async def _record_permission_denied(
+    *,
+    request: Request,
+    audit: AuditRecorder,
+    exc: PermissionDenied,
+) -> None:
+    await record_independent_audit_event(
+        audit=audit,
+        event_id=Uuid4Generator().new_uuid(),
+        event_type=AuditEventType.AUTHORIZATION_PERMISSION_DENIED,
+        outcome=AuditOutcome.DENIED,
+        actor_user_id=exc.user_id,
+        organization_id=exc.organization_id,
+        request_context=audit_request_context(request),
+        metadata={"permission": exc.permission.value},
+    )

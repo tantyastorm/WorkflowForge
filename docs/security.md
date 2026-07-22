@@ -128,6 +128,25 @@ Authentication and authorization errors use consistent status codes:
 
 Responses should avoid revealing whether hidden tenant resources exist.
 
+## Security Audit Trail
+
+Phase 2 records durable structured audit events for identity, authentication,
+session, tenancy, and authorization activity in PostgreSQL. Successful
+security-state changes are audited in the same transaction as the state change.
+Failures and denials that return `401` or `403` use a dedicated audit
+transaction so incident-review evidence survives the failed request.
+If independent audit persistence fails, the failure is logged with request
+correlation context and the original public `401` or `403` response is
+preserved. Same-transaction audit persistence failures roll back the owning
+security-state change.
+
+Audit metadata excludes plaintext passwords, password hashes, raw access or
+refresh tokens, refresh digests, signing secrets, cookies, CSRF values,
+authorization headers, request bodies, and raw exception reprs. Direct source IP
+and bounded user agent are allowed but treated as security-sensitive metadata.
+Audit dashboards, public audit endpoints, SIEM export, alerting, retention jobs,
+partitioning, and archival are deferred.
+
 ## Local Development
 
 Local development may enable registration with `WORKFLOWFORGE_AUTH_REGISTRATION_ENABLED`. Production defaults registration to disabled and uses a future CLI bootstrap command for initial setup. WorkflowForge must not provide default admin credentials.

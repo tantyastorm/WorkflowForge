@@ -11,9 +11,12 @@ import pytest
 from alembic import command
 from alembic.config import Config
 from fastapi.testclient import TestClient
+from sqlalchemy import func, select
 from workflowforge_api.factory import create_app
 from workflowforge_application.identity import SetUserPassword, SetUserPasswordCommand
+from workflowforge_domain.audit import AuditEventType
 from workflowforge_domain.identity import EmailAddress, User
+from workflowforge_infrastructure.audit.models import SecurityAuditEventRecord
 from workflowforge_infrastructure.config import Environment, Settings
 from workflowforge_infrastructure.database import (
     create_async_database_engine,
@@ -25,6 +28,7 @@ from workflowforge_infrastructure.identity import (
     SqlAlchemyPasswordCredentialRepository,
     SqlAlchemyUserRepository,
 )
+from workflowforge_infrastructure.identity.models import AuthSessionRecord
 
 from tests.integration.database.utils import require_postgresql
 
@@ -203,6 +207,25 @@ def test_auth_logout_and_logout_all_http_contracts() -> None:
         )
 
 
+@pytest.mark.integration
+def test_invalid_login_audit_persists_after_401_without_session_state() -> None:
+    settings = _settings()
+    _reset_database()
+    _seed_user(settings)
+    app = create_app(settings)
+
+    with TestClient(app) as client:
+        response = client.post(
+            "/api/v1/auth/login",
+            json={"email": "ada@example.com", "password": "wrong password"},
+        )
+
+    assert response.status_code == 401
+    assert response.json()["error"]["code"] == "authentication_failed"
+    assert _audit_count(settings, AuditEventType.AUTHENTICATION_LOGIN_FAILED) == 1
+    assert _session_count(settings) == 0
+
+
 def _settings() -> Settings:
     return Settings(environment=Environment.TEST, database=require_postgresql())
 
@@ -239,6 +262,44 @@ async def _seed_user_async(settings: Settings) -> None:
         )
         await set_password(SetUserPasswordCommand(user_id=USER_ID, password=PASSWORD), now=NOW)
         await session.commit()
+    finally:
+        await session.close()
+        await dispose_async_engine(engine)
+
+
+def _audit_count(settings: Settings, event_type: AuditEventType) -> int:
+    import asyncio
+
+    return asyncio.run(_audit_count_async(settings, event_type))
+
+
+async def _audit_count_async(settings: Settings, event_type: AuditEventType) -> int:
+    engine = create_async_database_engine(settings.database)
+    session = create_async_session_factory(engine)()
+    try:
+        result = await session.execute(
+            select(func.count())
+            .select_from(SecurityAuditEventRecord)
+            .where(SecurityAuditEventRecord.event_type == event_type.value)
+        )
+        return int(result.scalar_one())
+    finally:
+        await session.close()
+        await dispose_async_engine(engine)
+
+
+def _session_count(settings: Settings) -> int:
+    import asyncio
+
+    return asyncio.run(_session_count_async(settings))
+
+
+async def _session_count_async(settings: Settings) -> int:
+    engine = create_async_database_engine(settings.database)
+    session = create_async_session_factory(engine)()
+    try:
+        result = await session.execute(select(func.count()).select_from(AuthSessionRecord))
+        return int(result.scalar_one())
     finally:
         await session.close()
         await dispose_async_engine(engine)

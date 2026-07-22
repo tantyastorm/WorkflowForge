@@ -4,6 +4,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, Request, Response, status
 from starlette.responses import JSONResponse
+from workflowforge_application.audit import AuditRecorder
 from workflowforge_application.identity import (
     ExpiredRefreshTokenError,
     InvalidCredentialsError,
@@ -25,10 +26,14 @@ from workflowforge_application.identity import (
     UserAuthenticationDisabledError,
     VerifiedAccessPrincipal,
 )
+from workflowforge_domain.audit import AuditEventType, AuditOutcome
 from workflowforge_infrastructure.config import Settings
+from workflowforge_infrastructure.identity import Uuid4Generator
 
+from workflowforge_api.audit import audit_request_context, record_independent_audit_event
 from workflowforge_api.dependencies import (
     get_current_principal,
+    get_independent_audit_recorder,
     get_logout_all_sessions,
     get_logout_session,
     get_refresh_session,
@@ -65,6 +70,7 @@ async def login(
     response: Response,
     settings: Annotated[Settings, Depends(get_settings)],
     start_user_session: Annotated[StartUserSession, Depends(get_start_user_session)],
+    audit: Annotated[AuditRecorder, Depends(get_independent_audit_recorder)],
 ) -> TokenResponse:
     """Authenticate with email/password and set refresh cookies."""
 
@@ -74,9 +80,23 @@ async def login(
             StartUserSessionCommand(
                 email=payload.email,
                 password=payload.password.get_secret_value(),
+                audit_context=audit_request_context(request),
             )
         )
     except (InvalidCredentialsError, UserAuthenticationDisabledError) as exc:
+        reason = (
+            "disabled_user"
+            if isinstance(exc, UserAuthenticationDisabledError)
+            else "invalid_credentials"
+        )
+        await record_independent_audit_event(
+            audit=audit,
+            event_id=Uuid4Generator().new_uuid(),
+            event_type=AuditEventType.AUTHENTICATION_LOGIN_FAILED,
+            outcome=AuditOutcome.FAILURE,
+            request_context=audit_request_context(request),
+            metadata={"reason": reason},
+        )
         raise _authentication_error() from exc
     except TokenIssuanceError as exc:
         raise _internal_auth_error() from exc
@@ -92,22 +112,31 @@ async def refresh(
     response: Response,
     settings: Annotated[Settings, Depends(get_settings)],
     refresh_session: Annotated[RefreshSession, Depends(get_refresh_session)],
+    audit: Annotated[AuditRecorder, Depends(get_independent_audit_recorder)],
 ) -> TokenResponse | JSONResponse:
     """Rotate the refresh token from the HttpOnly cookie."""
 
     _require_csrf(request, settings)
     refresh_token = request.cookies.get(settings.auth.refresh_cookie_name)
     if refresh_token is None:
+        await _record_refresh_failure(request=request, audit=audit, reason="missing_cookie")
         raise _authentication_error()
 
     try:
-        token_pair = await refresh_session(RefreshSessionCommand(refresh_token=refresh_token))
+        token_pair = await refresh_session(
+            RefreshSessionCommand(
+                refresh_token=refresh_token,
+                audit_context=audit_request_context(request),
+            )
+        )
     except (
         InvalidRefreshTokenError,
         ExpiredRefreshTokenError,
-        RefreshTokenReplayError,
         RefreshRotationConflictError,
-    ):
+    ) as exc:
+        await _record_refresh_failure(request=request, audit=audit, reason=type(exc).__name__)
+        return _auth_failure_with_cleared_cookies(settings)
+    except RefreshTokenReplayError:
         return _auth_failure_with_cleared_cookies(settings)
     except TokenIssuanceError as exc:
         raise _internal_auth_error() from exc
@@ -130,7 +159,11 @@ async def logout(
     _require_csrf(request, settings)
     try:
         await logout_session(
-            LogoutSessionCommand(user_id=principal.user_id, session_id=principal.session_id)
+            LogoutSessionCommand(
+                user_id=principal.user_id,
+                session_id=principal.session_id,
+                audit_context=audit_request_context(request),
+            )
         )
     except SessionOwnershipError as exc:
         raise ApiError(
@@ -155,7 +188,13 @@ async def logout_all(
     """Revoke all sessions for the authenticated user and clear local cookies."""
 
     _require_csrf(request, settings)
-    result = await logout_all_sessions(LogoutAllSessionsCommand(user_id=principal.user_id))
+    result = await logout_all_sessions(
+        LogoutAllSessionsCommand(
+            user_id=principal.user_id,
+            session_id=principal.session_id,
+            audit_context=audit_request_context(request),
+        )
+    )
     clear_auth_cookies(response, settings.auth)
     return LogoutAllResponse(revoked_sessions=result.revoked_sessions)
 
@@ -251,3 +290,19 @@ def _auth_failure_with_cleared_cookies(
     )
     clear_auth_cookies(cleared, settings.auth)
     return cleared
+
+
+async def _record_refresh_failure(
+    *,
+    request: Request,
+    audit: AuditRecorder,
+    reason: str,
+) -> None:
+    await record_independent_audit_event(
+        audit=audit,
+        event_id=Uuid4Generator().new_uuid(),
+        event_type=AuditEventType.SESSION_REFRESH_FAILED,
+        outcome=AuditOutcome.FAILURE,
+        request_context=audit_request_context(request),
+        metadata={"reason": reason},
+    )

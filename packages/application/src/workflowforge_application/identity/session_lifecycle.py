@@ -7,6 +7,12 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
+from workflowforge_domain.audit import (
+    AuditEvent,
+    AuditEventType,
+    AuditOutcome,
+    AuditRequestContext,
+)
 from workflowforge_domain.identity import (
     AuthSession,
     RefreshTokenFamilyId,
@@ -15,6 +21,7 @@ from workflowforge_domain.identity import (
     SessionId,
 )
 
+from workflowforge_application.audit import AuditRecorder
 from workflowforge_application.identity.authentication import (
     AuthenticatedUser,
     AuthenticateUserCommand,
@@ -78,6 +85,7 @@ class StartUserSessionCommand:
 
     email: str
     password: str
+    audit_context: AuditRequestContext | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -85,6 +93,7 @@ class RefreshSessionCommand:
     """Input for refresh-token rotation."""
 
     refresh_token: str
+    audit_context: AuditRequestContext | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -93,6 +102,7 @@ class LogoutSessionCommand:
 
     user_id: UUID
     session_id: SessionId
+    audit_context: AuditRequestContext | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -100,6 +110,8 @@ class LogoutAllSessionsCommand:
     """Input for revoking all sessions for a user."""
 
     user_id: UUID
+    session_id: SessionId | None = None
+    audit_context: AuditRequestContext | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -123,6 +135,7 @@ class StartUserSession:
         transaction: TransactionManager,
         clock: Clock,
         ids: IdGenerator,
+        audit: AuditRecorder | None = None,
         policy: SessionLifecyclePolicy | None = None,
     ) -> None:
         self._authenticate_user = authenticate_user
@@ -133,6 +146,7 @@ class StartUserSession:
         self._transaction = transaction
         self._clock = clock
         self._ids = ids
+        self._audit = audit
         self._policy = policy or SessionLifecyclePolicy()
 
     async def __call__(self, command: StartUserSessionCommand) -> TokenPair:
@@ -167,6 +181,29 @@ class StartUserSession:
                 issued_at=issued_at,
             )
             await self._sessions.add(session=session, refresh_token=refresh_record)
+            if self._audit is not None:
+                await self._audit.record(
+                    AuditEvent.create(
+                        id=self._ids.new_uuid(),
+                        event_type=AuditEventType.AUTHENTICATION_LOGIN_SUCCEEDED,
+                        outcome=AuditOutcome.SUCCESS,
+                        occurred_at=issued_at,
+                        actor_user_id=user.user_id,
+                        session_id=session_id.value,
+                        request_context=command.audit_context,
+                    )
+                )
+                await self._audit.record(
+                    AuditEvent.create(
+                        id=self._ids.new_uuid(),
+                        event_type=AuditEventType.SESSION_CREATED,
+                        outcome=AuditOutcome.SUCCESS,
+                        occurred_at=issued_at,
+                        actor_user_id=user.user_id,
+                        session_id=session_id.value,
+                        request_context=command.audit_context,
+                    )
+                )
             await self._transaction.commit()
             return TokenPair(
                 access_token=access_token,
@@ -218,6 +255,7 @@ class RefreshSession:
         transaction: TransactionManager,
         clock: Clock,
         ids: IdGenerator,
+        audit: AuditRecorder | None = None,
         policy: SessionLifecyclePolicy | None = None,
     ) -> None:
         self._sessions = sessions
@@ -227,6 +265,7 @@ class RefreshSession:
         self._transaction = transaction
         self._clock = clock
         self._ids = ids
+        self._audit = audit
         self._policy = policy or SessionLifecyclePolicy()
 
     async def __call__(self, command: RefreshSessionCommand) -> TokenPair:
@@ -241,6 +280,28 @@ class RefreshSession:
                 raise InvalidRefreshTokenError(msg)
             if current.used_at is not None or current.replaced_by_token_id is not None:
                 await self._sessions.revoke(current.session_id, revoked_at=rotated_at)
+                if self._audit is not None:
+                    await self._audit.record(
+                        AuditEvent.create(
+                            id=self._ids.new_uuid(),
+                            event_type=AuditEventType.SESSION_REFRESH_REPLAY_DETECTED,
+                            outcome=AuditOutcome.REPLAY_DETECTED,
+                            occurred_at=rotated_at,
+                            session_id=current.session_id.value,
+                            request_context=command.audit_context,
+                        )
+                    )
+                    await self._audit.record(
+                        AuditEvent.create(
+                            id=self._ids.new_uuid(),
+                            event_type=AuditEventType.SESSION_REVOKED,
+                            outcome=AuditOutcome.SUCCESS,
+                            occurred_at=rotated_at,
+                            session_id=current.session_id.value,
+                            request_context=command.audit_context,
+                            metadata={"reason": "refresh_replay"},
+                        )
+                    )
                 await self._transaction.commit()
                 msg = "Refresh token replay was detected."
                 raise RefreshTokenReplayError(msg)
@@ -278,6 +339,18 @@ class RefreshSession:
                 replacement=replacement,
                 rotated_at=rotated_at,
             )
+            if self._audit is not None:
+                await self._audit.record(
+                    AuditEvent.create(
+                        id=self._ids.new_uuid(),
+                        event_type=AuditEventType.SESSION_REFRESHED,
+                        outcome=AuditOutcome.SUCCESS,
+                        occurred_at=rotated_at,
+                        actor_user_id=session.user_id,
+                        session_id=session.id.value,
+                        request_context=command.audit_context,
+                    )
+                )
             await self._transaction.commit()
         except RefreshTokenReplayError:
             raise
@@ -327,10 +400,14 @@ class LogoutSession:
         sessions: SessionRepository,
         transaction: TransactionManager,
         clock: Clock,
+        ids: IdGenerator | None = None,
+        audit: AuditRecorder | None = None,
     ) -> None:
         self._sessions = sessions
         self._transaction = transaction
         self._clock = clock
+        self._ids = ids
+        self._audit = audit
 
     async def __call__(self, command: LogoutSessionCommand) -> None:
         """Revoke one owned session."""
@@ -343,10 +420,23 @@ class LogoutSession:
             if session.user_id != command.user_id:
                 msg = "Session does not belong to the user."
                 raise SessionOwnershipError(msg)
+            revoked_at = _normalize_timestamp(self._clock.now())
             await self._sessions.revoke(
                 command.session_id,
-                revoked_at=_normalize_timestamp(self._clock.now()),
+                revoked_at=revoked_at,
             )
+            if self._audit is not None:
+                await self._audit.record(
+                    AuditEvent.create(
+                        id=_audit_id(self._ids),
+                        event_type=AuditEventType.SESSION_REVOKED,
+                        outcome=AuditOutcome.SUCCESS,
+                        occurred_at=revoked_at,
+                        actor_user_id=command.user_id,
+                        session_id=command.session_id.value,
+                        request_context=command.audit_context,
+                    )
+                )
             await self._transaction.commit()
         except Exception:
             await self._transaction.rollback()
@@ -362,19 +452,37 @@ class LogoutAllSessions:
         sessions: SessionRepository,
         transaction: TransactionManager,
         clock: Clock,
+        ids: IdGenerator | None = None,
+        audit: AuditRecorder | None = None,
     ) -> None:
         self._sessions = sessions
         self._transaction = transaction
         self._clock = clock
+        self._ids = ids
+        self._audit = audit
 
     async def __call__(self, command: LogoutAllSessionsCommand) -> LogoutAllSessionsResult:
         """Revoke all active sessions for one user."""
 
         try:
+            revoked_at = _normalize_timestamp(self._clock.now())
             revoked = await self._sessions.revoke_all_for_user(
                 command.user_id,
-                revoked_at=_normalize_timestamp(self._clock.now()),
+                revoked_at=revoked_at,
             )
+            if self._audit is not None:
+                await self._audit.record(
+                    AuditEvent.create(
+                        id=_audit_id(self._ids),
+                        event_type=AuditEventType.SESSION_REVOKED_ALL,
+                        outcome=AuditOutcome.SUCCESS,
+                        occurred_at=revoked_at,
+                        actor_user_id=command.user_id,
+                        session_id=command.session_id.value if command.session_id else None,
+                        request_context=command.audit_context,
+                        metadata={"revoked_sessions": revoked},
+                    )
+                )
             await self._transaction.commit()
             return LogoutAllSessionsResult(revoked_sessions=revoked)
         except Exception:
@@ -429,3 +537,10 @@ def _normalize_timestamp(value: datetime) -> datetime:
         msg = "Session lifecycle timestamp must be timezone-aware."
         raise ValueError(msg)
     return value.astimezone(UTC)
+
+
+def _audit_id(ids: IdGenerator | None) -> UUID:
+    if ids is None:
+        msg = "Audit recording requires an ID generator."
+        raise ValueError(msg)
+    return ids.new_uuid()

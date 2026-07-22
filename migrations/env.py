@@ -6,12 +6,13 @@ from logging.config import fileConfig
 
 from alembic import context
 from sqlalchemy import engine_from_config, pool
+from workflowforge_infrastructure.audit import models as audit_models
 from workflowforge_infrastructure.config import DatabaseSettings, get_settings
 from workflowforge_infrastructure.database.base import metadata
 from workflowforge_infrastructure.documents import models as document_models
 from workflowforge_infrastructure.identity import models as identity_models
 
-_ = (document_models, identity_models)
+_ = (audit_models, document_models, identity_models)
 
 config = context.config
 

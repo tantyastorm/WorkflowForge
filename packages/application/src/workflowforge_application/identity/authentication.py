@@ -6,9 +6,16 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from uuid import UUID
 
+from workflowforge_domain.audit import (
+    AuditEvent,
+    AuditEventType,
+    AuditOutcome,
+    AuditRequestContext,
+)
 from workflowforge_domain.identity import EmailAddress
 from workflowforge_domain.identity.errors import InvalidEmailAddress
 
+from workflowforge_application.audit import AuditRecorder
 from workflowforge_application.identity.credentials import PasswordCredential
 from workflowforge_application.identity.errors import (
     InvalidCredentialsError,
@@ -17,6 +24,7 @@ from workflowforge_application.identity.errors import (
     UserAuthenticationDisabledError,
 )
 from workflowforge_application.identity.ports import (
+    IdGenerator,
     PasswordCredentialRepository,
     PasswordHasher,
     UserRepository,
@@ -40,6 +48,7 @@ class SetUserPasswordCommand:
 
     user_id: UUID
     password: str
+    audit_context: AuditRequestContext | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -123,10 +132,14 @@ class SetUserPassword:
         users: UserRepository,
         credentials: PasswordCredentialRepository,
         password_hasher: PasswordHasher,
+        audit: AuditRecorder | None = None,
+        ids: IdGenerator | None = None,
     ) -> None:
         self._users = users
         self._credentials = credentials
         self._password_hasher = password_hasher
+        self._audit = audit
+        self._ids = ids
 
     async def __call__(
         self,
@@ -155,7 +168,26 @@ class SetUserPassword:
                 updated_at=timestamp,
             )
         )
-        return await self._credentials.set_for_user(credential)
+        saved = await self._credentials.set_for_user(credential)
+        if self._audit is not None:
+            if self._ids is None:
+                msg = "Audit recording requires an ID generator."
+                raise ValueError(msg)
+            await self._audit.record(
+                AuditEvent.create(
+                    id=self._ids.new_uuid(),
+                    event_type=(
+                        AuditEventType.CREDENTIAL_PASSWORD_REPLACED
+                        if existing is not None
+                        else AuditEventType.CREDENTIAL_PASSWORD_SET
+                    ),
+                    outcome=AuditOutcome.SUCCESS,
+                    occurred_at=timestamp,
+                    actor_user_id=command.user_id,
+                    request_context=command.audit_context,
+                )
+            )
+        return saved
 
 
 def _validate_password_policy(password: str) -> None:

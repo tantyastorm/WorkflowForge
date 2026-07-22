@@ -359,7 +359,7 @@ Tenant-owned use cases receive an explicit `TenantContext` containing `user_id`,
 
 Roles are `owner`, `admin`, `operator`, `reviewer`, and `auditor`. Permission mappings are code-defined, while membership stores the selected role. The last active owner cannot be removed, suspended, or demoted. Admins cannot create, promote, demote, suspend, update, or remove owners.
 
-Audit records are append-only through application behavior and include tenant-aware context where available. Audit metadata is bounded and must not contain secret or token material. Tenant-scoped audit queries require authorization, while global events are handled deliberately.
+Audit records are append-only through application behavior and include tenant-aware context where available. Audit metadata is bounded and must not contain secret or token material. Security-state successes audit in the same transaction as the state change, while failures and denials use an independent audit transaction so they survive failed requests. Tenant-scoped audit queries require authorization, while global events are handled deliberately.
 
 The identity persistence foundation stores users, organizations, memberships,
 and password credentials in PostgreSQL. Password credentials are separated from

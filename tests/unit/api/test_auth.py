@@ -10,6 +10,7 @@ from uuid import UUID
 from fastapi.testclient import TestClient
 from workflowforge_api.dependencies import (
     get_current_principal,
+    get_independent_audit_recorder,
     get_logout_all_sessions,
     get_logout_session,
     get_refresh_session,
@@ -31,6 +32,7 @@ from workflowforge_application.identity import (
     TokenPair,
     VerifiedAccessPrincipal,
 )
+from workflowforge_domain.audit import AuditEvent
 from workflowforge_domain.identity import SessionId
 from workflowforge_infrastructure.config import Environment, Settings
 
@@ -41,7 +43,7 @@ TOKEN_ID = UUID("77777777-7777-4777-8777-777777777777")
 
 
 def test_login_success_sets_refresh_and_csrf_cookies_without_refresh_json() -> None:
-    app = create_app(Settings(environment=Environment.TEST))
+    app = _app()
     start = FakeStartUserSession(_token_pair("access-1", "refresh-1"))
     app.dependency_overrides[get_start_user_session] = lambda: start
 
@@ -57,14 +59,17 @@ def test_login_success_sets_refresh_and_csrf_cookies_without_refresh_json() -> N
     assert body["token_type"] == "Bearer"
     assert body["session_id"] == str(SESSION_ID)
     assert "refresh_token" not in body
-    assert start.commands == [StartUserSessionCommand("ada@example.com", "correct horse")]
+    assert start.commands[0].email == "ada@example.com"
+    assert start.commands[0].password == "correct horse"
+    assert start.commands[0].audit_context is not None
+    assert start.commands[0].audit_context.user_agent == "testclient"
     cookies = _set_cookies(response)
     _assert_refresh_cookie(cookies, value="refresh-1")
     _assert_csrf_cookie(cookies)
 
 
 def test_login_rejects_untrusted_origin_without_requiring_csrf() -> None:
-    app = create_app(Settings(environment=Environment.TEST))
+    app = _app()
     start = FakeStartUserSession(_token_pair("access-1", "refresh-1"))
     app.dependency_overrides[get_start_user_session] = lambda: start
 
@@ -86,7 +91,7 @@ def test_login_rejects_untrusted_origin_without_requiring_csrf() -> None:
 
 
 def test_login_invalid_credentials_returns_401_without_cookies() -> None:
-    app = create_app(Settings(environment=Environment.TEST))
+    app = _app()
     app.dependency_overrides[get_start_user_session] = lambda: FakeStartUserSession(
         InvalidCredentialsError("Invalid")
     )
@@ -103,8 +108,25 @@ def test_login_invalid_credentials_returns_401_without_cookies() -> None:
     assert "set-cookie" not in response.headers
 
 
+def test_login_audit_failure_preserves_public_401_response() -> None:
+    app = _app()
+    app.dependency_overrides[get_start_user_session] = lambda: FakeStartUserSession(
+        InvalidCredentialsError("Invalid")
+    )
+    app.dependency_overrides[get_independent_audit_recorder] = FailingAuditRecorder
+
+    with TestClient(app) as client:
+        response = client.post(
+            "/api/v1/auth/login",
+            json={"email": "ada@example.com", "password": "bad password"},
+        )
+
+    assert response.status_code == 401
+    assert response.json()["error"]["code"] == "authentication_failed"
+
+
 def test_refresh_requires_cookie_and_csrf() -> None:
-    app = create_app(Settings(environment=Environment.TEST))
+    app = _app()
     app.dependency_overrides[get_refresh_session] = lambda: FakeRefreshSession(
         _token_pair("access-2", "refresh-2")
     )
@@ -184,7 +206,7 @@ def test_refresh_requires_cookie_and_csrf() -> None:
 
 
 def test_refresh_success_rotates_refresh_and_csrf_cookies() -> None:
-    app = create_app(Settings(environment=Environment.TEST))
+    app = _app()
     refresh = FakeRefreshSession(_token_pair("access-2", "refresh-2"))
     app.dependency_overrides[get_refresh_session] = lambda: refresh
 
@@ -201,7 +223,9 @@ def test_refresh_success_rotates_refresh_and_csrf_cookies() -> None:
     assert response.status_code == 200
     assert response.json()["access_token"] == "access-2"
     assert "refresh_token" not in response.json()
-    assert refresh.commands == [RefreshSessionCommand("refresh-1")]
+    assert refresh.commands[0].refresh_token == "refresh-1"
+    assert refresh.commands[0].audit_context is not None
+    assert refresh.commands[0].audit_context.user_agent == "testclient"
     cookies = _set_cookies(response)
     _assert_refresh_cookie(cookies, value="refresh-2")
     _assert_csrf_cookie(cookies)
@@ -209,7 +233,7 @@ def test_refresh_success_rotates_refresh_and_csrf_cookies() -> None:
 
 
 def test_refresh_invalid_token_returns_401_and_clears_cookies() -> None:
-    app = create_app(Settings(environment=Environment.TEST))
+    app = _app()
     app.dependency_overrides[get_refresh_session] = lambda: FakeRefreshSession(
         InvalidRefreshTokenError("Invalid")
     )
@@ -230,7 +254,7 @@ def test_refresh_invalid_token_returns_401_and_clears_cookies() -> None:
 
 
 def test_me_requires_bearer_and_returns_safe_principal() -> None:
-    app = create_app(Settings(environment=Environment.TEST))
+    app = _app()
     verifier = FakeVerifyAccessToken(_claims())
     app.dependency_overrides[get_verify_access_token] = lambda: verifier
 
@@ -257,7 +281,7 @@ def test_me_requires_bearer_and_returns_safe_principal() -> None:
 
 
 def test_me_maps_invalid_and_expired_bearer_tokens_to_401() -> None:
-    app = create_app(Settings(environment=Environment.TEST))
+    app = _app()
     app.dependency_overrides[get_verify_access_token] = lambda: FakeVerifyAccessToken(
         InvalidAccessTokenError("Invalid")
     )
@@ -280,7 +304,7 @@ def test_me_maps_invalid_and_expired_bearer_tokens_to_401() -> None:
 
 
 def test_logout_revokes_current_session_and_clears_cookies() -> None:
-    app = create_app(Settings(environment=Environment.TEST))
+    app = _app()
     logout = FakeLogoutSession()
     app.dependency_overrides[get_current_principal] = lambda: _principal()
     app.dependency_overrides[get_logout_session] = lambda: logout
@@ -296,16 +320,17 @@ def test_logout_revokes_current_session_and_clears_cookies() -> None:
 
     assert response.status_code == 200
     assert response.json() == {"revoked": True}
-    assert logout.commands == [
-        LogoutSessionCommand(user_id=USER_ID, session_id=SessionId(SESSION_ID))
-    ]
+    assert logout.commands[0].user_id == USER_ID
+    assert logout.commands[0].session_id == SessionId(SESSION_ID)
+    assert logout.commands[0].audit_context is not None
+    assert logout.commands[0].audit_context.user_agent == "testclient"
     cookies = _set_cookies(response)
     _assert_cleared_cookie(cookies, "workflowforge_refresh", httponly=True)
     _assert_cleared_cookie(cookies, "workflowforge_csrf", httponly=False)
 
 
 def test_logout_all_returns_revoked_count_and_clears_cookies() -> None:
-    app = create_app(Settings(environment=Environment.TEST))
+    app = _app()
     logout_all = FakeLogoutAllSessions(3)
     app.dependency_overrides[get_current_principal] = lambda: _principal()
     app.dependency_overrides[get_logout_all_sessions] = lambda: logout_all
@@ -321,7 +346,10 @@ def test_logout_all_returns_revoked_count_and_clears_cookies() -> None:
 
     assert response.status_code == 200
     assert response.json() == {"revoked_sessions": 3}
-    assert logout_all.commands == [LogoutAllSessionsCommand(user_id=USER_ID)]
+    assert logout_all.commands[0].user_id == USER_ID
+    assert logout_all.commands[0].session_id == SessionId(SESSION_ID)
+    assert logout_all.commands[0].audit_context is not None
+    assert logout_all.commands[0].audit_context.user_agent == "testclient"
     cookies = _set_cookies(response)
     _assert_cleared_cookie(cookies, "workflowforge_refresh", httponly=True)
     _assert_cleared_cookie(cookies, "workflowforge_csrf", httponly=False)
@@ -340,6 +368,21 @@ class FakeStartUserSession:
         if isinstance(self.result, Exception):
             raise self.result
         return self.result
+
+
+class NullAuditRecorder:
+    def __init__(self) -> None:
+        self.events: list[AuditEvent] = []
+
+    async def record(self, event: AuditEvent) -> None:
+        self.events.append(event)
+
+
+class FailingAuditRecorder:
+    async def record(self, event: AuditEvent) -> None:
+        from workflowforge_application.audit import AuditPersistenceError
+
+        raise AuditPersistenceError("audit failed")
 
 
 class FakeRefreshSession:
@@ -399,6 +442,12 @@ def _token_pair(access_token: str, refresh_token: str) -> TokenPair:
         access_token_expires_at=NOW + timedelta(minutes=15),
         refresh_token_expires_at=NOW + timedelta(days=30),
     )
+
+
+def _app() -> Any:
+    app = create_app(Settings(environment=Environment.TEST))
+    app.dependency_overrides[get_independent_audit_recorder] = NullAuditRecorder
+    return app
 
 
 def _claims() -> AccessTokenClaims:

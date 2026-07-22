@@ -111,3 +111,15 @@ requires the expected session ID, digest, generation, unused/unrevoked token
 state, and active session state. Stale rotation attempts raise a sanitized
 application conflict. Revoke-one and revoke-all mark sessions and current
 refresh credentials revoked without committing implicitly.
+
+## Audit Persistence
+
+Infrastructure implements audit ports with `security_audit_events` in
+PostgreSQL. The table stores typed event names, outcomes, actor/user,
+organization, session, correlation/request metadata, bounded source IP and user
+agent, structured JSONB metadata, and timestamps.
+
+Audit foreign keys use `ON DELETE SET NULL` so hard-deleting users,
+organizations, or sessions does not cascade away audit evidence. The repository
+exposes append and bounded newest-first query operations only; it does not expose
+update or delete methods and does not commit transactions implicitly.
