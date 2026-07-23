@@ -20,6 +20,9 @@ from workflowforge_application.authorization import (
     TenantContext,
     TenantMembershipInactive,
 )
+from workflowforge_application.batches import BatchService
+from workflowforge_application.cases import CaseService
+from workflowforge_application.documents import DocumentService, ObjectStorage, UploadDocument
 from workflowforge_application.health import DependencyHealthService
 from workflowforge_application.identity import (
     AuthenticateUser,
@@ -38,11 +41,17 @@ from workflowforge_application.security import AuthenticationRateLimiter
 from workflowforge_domain.audit import AuditEventType, AuditOutcome
 from workflowforge_domain.identity import Permission
 from workflowforge_infrastructure.audit import SqlAlchemyAuditRepository
+from workflowforge_infrastructure.batches import SqlAlchemyBatchRepository
+from workflowforge_infrastructure.cases import SqlAlchemyCaseRepository
 from workflowforge_infrastructure.config import Settings
 from workflowforge_infrastructure.database import (
     SqlAlchemyTransactionManager,
     async_session_scope,
     create_async_session_factory,
+)
+from workflowforge_infrastructure.documents import (
+    SqlAlchemyDocumentRepository,
+    SqlAlchemyUploadIdempotencyRepository,
 )
 from workflowforge_infrastructure.identity import (
     Argon2PasswordHasher,
@@ -58,6 +67,7 @@ from workflowforge_infrastructure.identity import (
     Uuid4Generator,
 )
 from workflowforge_infrastructure.security import RedisAuthenticationRateLimiter
+from workflowforge_infrastructure.storage import S3ObjectStorage
 
 from workflowforge_api.audit import (
     IndependentSqlAlchemyAuditRecorder,
@@ -256,6 +266,73 @@ def get_authentication_rate_limiter(request: Request) -> AuthenticationRateLimit
     return RedisAuthenticationRateLimiter(
         request.app.state.redis_client,
         get_settings(request).rate_limit,
+    )
+
+
+def get_upload_document(
+    settings: Annotated[Settings, Depends(get_settings)],
+    session: Annotated[AsyncSession, Depends(get_database_session)],
+    request: Request,
+) -> UploadDocument:
+    """Compose the document upload use case."""
+
+    return UploadDocument(
+        documents=SqlAlchemyDocumentRepository(session),
+        idempotency=SqlAlchemyUploadIdempotencyRepository(session),
+        storage=S3ObjectStorage(request.app.state.s3_client, settings.s3),
+        transaction=SqlAlchemyTransactionManager(session),
+        audit=SqlAlchemyAuditRepository(session),
+        ids=Uuid4Generator(),
+        max_bytes=settings.document_upload.max_bytes,
+        idempotency_ttl=timedelta(seconds=settings.document_upload.idempotency_ttl_seconds),
+    )
+
+
+def get_document_service(
+    session: Annotated[AsyncSession, Depends(get_database_session)],
+) -> DocumentService:
+    """Compose the document metadata service."""
+
+    return DocumentService(
+        SqlAlchemyDocumentRepository(session),
+        transaction=SqlAlchemyTransactionManager(session),
+        audit=SqlAlchemyAuditRepository(session),
+        ids=Uuid4Generator(),
+    )
+
+
+def get_object_storage(
+    settings: Annotated[Settings, Depends(get_settings)],
+    request: Request,
+) -> ObjectStorage:
+    """Return object storage adapter for API use cases."""
+
+    return S3ObjectStorage(request.app.state.s3_client, settings.s3)
+
+
+def get_batch_service(
+    session: Annotated[AsyncSession, Depends(get_database_session)],
+) -> BatchService:
+    """Compose the batch application service."""
+
+    return BatchService(
+        SqlAlchemyBatchRepository(session),
+        transaction=SqlAlchemyTransactionManager(session),
+        audit=SqlAlchemyAuditRepository(session),
+        ids=Uuid4Generator(),
+    )
+
+
+def get_case_service(
+    session: Annotated[AsyncSession, Depends(get_database_session)],
+) -> CaseService:
+    """Compose the case application service."""
+
+    return CaseService(
+        SqlAlchemyCaseRepository(session),
+        transaction=SqlAlchemyTransactionManager(session),
+        audit=SqlAlchemyAuditRepository(session),
+        ids=Uuid4Generator(),
     )
 
 

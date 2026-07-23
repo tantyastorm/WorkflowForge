@@ -5,10 +5,18 @@ from typing import Any
 from workflowforge_contracts import SCHEDULER_HEARTBEAT_TASK_NAME
 
 from workflowforge_infrastructure.config import Settings
+from workflowforge_infrastructure.tasks.documents import (
+    DOCUMENT_IDEMPOTENCY_CLEANUP_TASK_NAME,
+    DOCUMENT_STORAGE_RECONCILE_TASK_NAME,
+    DOCUMENT_TEMP_CLEANUP_TASK_NAME,
+)
 from workflowforge_infrastructure.tasks.security import SECURITY_CLEANUP_TASK_NAME
 
 SCHEDULER_HEARTBEAT_SCHEDULE_NAME = "system-diagnostics-scheduler-heartbeat"
 SECURITY_CLEANUP_SCHEDULE_NAME = "security-sessions-cleanup"
+DOCUMENT_IDEMPOTENCY_CLEANUP_SCHEDULE_NAME = "documents-idempotency-cleanup"
+DOCUMENT_TEMP_CLEANUP_SCHEDULE_NAME = "documents-temp-cleanup"
+DOCUMENT_STORAGE_RECONCILE_SCHEDULE_NAME = "documents-storage-reconcile"
 
 
 def register_periodic_schedules(app: Any, settings: Settings) -> None:
@@ -24,6 +32,21 @@ def register_periodic_schedules(app: Any, settings: Settings) -> None:
     if settings.cleanup.schedule_enabled:
         schedule[SECURITY_CLEANUP_SCHEDULE_NAME] = {
             "task": SECURITY_CLEANUP_TASK_NAME,
+            "schedule": settings.cleanup.schedule_seconds,
+            "options": {"queue": settings.celery.default_queue},
+        }
+        schedule[DOCUMENT_IDEMPOTENCY_CLEANUP_SCHEDULE_NAME] = {
+            "task": DOCUMENT_IDEMPOTENCY_CLEANUP_TASK_NAME,
+            "schedule": settings.cleanup.schedule_seconds,
+            "options": {"queue": settings.celery.default_queue},
+        }
+        schedule[DOCUMENT_TEMP_CLEANUP_SCHEDULE_NAME] = {
+            "task": DOCUMENT_TEMP_CLEANUP_TASK_NAME,
+            "schedule": settings.cleanup.schedule_seconds,
+            "options": {"queue": settings.celery.default_queue},
+        }
+        schedule[DOCUMENT_STORAGE_RECONCILE_SCHEDULE_NAME] = {
+            "task": DOCUMENT_STORAGE_RECONCILE_TASK_NAME,
             "schedule": settings.cleanup.schedule_seconds,
             "options": {"queue": settings.celery.default_queue},
         }

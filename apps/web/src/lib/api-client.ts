@@ -15,6 +15,7 @@ export type ApiClientOptions = {
 export type ApiRequestOptions = {
   method?: string;
   body?: unknown;
+  rawBody?: BodyInit;
   headers?: HeadersInit;
   correlationId?: string;
   expectedStatuses?: readonly number[];
@@ -115,9 +116,18 @@ export class ApiClient {
     }
 
     let body: BodyInit | undefined;
+    if (options.body !== undefined && options.rawBody !== undefined) {
+      throw new ApiError({
+        status: null,
+        code: "INVALID_REQUEST_BODY",
+        message: "API requests must use either body or rawBody.",
+      });
+    }
     if (options.body !== undefined) {
       headers.set("Content-Type", "application/json");
       body = JSON.stringify(options.body);
+    } else if (options.rawBody !== undefined) {
+      body = options.rawBody;
     }
 
     if (options.correlationId !== undefined) {

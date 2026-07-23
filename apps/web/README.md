@@ -42,6 +42,9 @@ Authenticated operators use:
 http://127.0.0.1:5173/login
 http://127.0.0.1:5173/app/system
 http://127.0.0.1:5173/app/tenant-context
+http://127.0.0.1:5173/app/documents
+http://127.0.0.1:5173/app/batches
+http://127.0.0.1:5173/app/cases
 ```
 
 Quality commands:
@@ -103,4 +106,4 @@ Then open `http://127.0.0.1:5173/status`. Local frontend env overrides belong in
 
 ## Current Scope
 
-The app currently provides a neutral operator shell, provider composition, typed environment parsing, an API-client foundation, session restoration, login/logout/logout-all, current-user organization selection, permission-aware route guards, loading/error components, an error boundary, the operational system-status page, and a tenant-context diagnostic page. It does not include public registration, password reset, membership administration, organization creation, workflow screens, document screens, charts, generated API clients, or final UI branding.
+The app currently provides a neutral operator shell, provider composition, typed environment parsing, an API-client foundation, session restoration, login/logout/logout-all, current-user organization selection, permission-aware route guards, loading/error components, an error boundary, the operational system-status page, tenant-context diagnostics, and Phase 3 document, batch, and case pages. It does not include public registration, password reset, membership administration, organization creation, workflow execution screens, review/approval flows, charts, generated API clients, or final UI branding.

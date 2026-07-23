@@ -26,6 +26,21 @@ export function AppShell() {
               <NavLink to="/app/system" className="app-shell__nav-link">
                 System
               </NavLink>
+              {auth.hasPermission("document.read") ? (
+                <NavLink to="/app/documents" className="app-shell__nav-link">
+                  Documents
+                </NavLink>
+              ) : null}
+              {auth.hasPermission("batch.read") ? (
+                <NavLink to="/app/batches" className="app-shell__nav-link">
+                  Batches
+                </NavLink>
+              ) : null}
+              {auth.hasPermission("case.read") ? (
+                <NavLink to="/app/cases" className="app-shell__nav-link">
+                  Cases
+                </NavLink>
+              ) : null}
               {auth.hasPermission("organization.read") ? (
                 <NavLink to="/app/tenant-context" className="app-shell__nav-link">
                   Tenant context

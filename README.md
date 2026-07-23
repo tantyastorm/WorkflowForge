@@ -4,14 +4,17 @@ WorkflowForge is an open-source operations platform for building, evaluating, an
 
 ## Project Status
 
-WorkflowForge has completed the Phase 2 identity, tenancy, security, audit, and operator-auth foundation on `feature/identity-tenancy-security`. The repository now has the Phase 1 platform base plus document metadata persistence, durable identity state, authentication/session lifecycle, tenant-context authorization, security audit logging, Redis rate limiting, session cleanup, first-owner bootstrap, and a React operator shell for login, organization selection, status, and tenant-context diagnostics.
+WorkflowForge has completed the Phase 3 document intake, batch, and case-management foundation on `feature/document-intake-storage`. The repository now has the Phase 1 platform base, the Phase 2 identity/security foundation, tenant-scoped document persistence and uploads, short-lived document downloads, batch grouping, case records with comments/tasks/decisions, operational cleanup task registrations, and React operator pages for documents, batches, and cases.
 
-Still deferred: public registration, password reset, MFA, email verification, membership and organization administration UI, audit dashboards, SIEM/export, document upload, document tenancy migration, workflow execution, and Phase 3 features.
+Still deferred: public registration, password reset, MFA, email verification, membership and organization administration UI, audit dashboards, SIEM/export, OCR, AI classification/extraction, workflow execution, review/approval flows, and Phase 4 workflow automation.
 
 ## Current Capabilities
 
 - Modular monolith workspace with FastAPI API, Celery worker, Celery Beat scheduler, React/Vite web app, PostgreSQL, Redis, and MinIO.
-- Document metadata domain and PostgreSQL persistence.
+- Tenant-scoped document metadata, version, artifact, upload idempotency, and PostgreSQL persistence.
+- Multipart document upload with idempotency, validation, object storage handoff, safe metadata responses, archive locking, and signed download URL creation.
+- Batch domain, persistence, migration, API routes, document membership management, audit events, and operator UI.
+- Case domain, persistence, migration, API routes, document membership, comments, tasks, decisions, lifecycle transitions, audit events, and operator UI.
 - User, organization, membership, role, permission, and tenant-context domain/application foundations.
 - Argon2 password credentials, HS256 JWT bearer access tokens, durable sessions, rotating refresh tokens, replay detection, logout, and logout-all.
 - HttpOnly refresh cookies, readable CSRF double-submit cookie, Origin validation, security headers, and production configuration validation.
@@ -107,6 +110,8 @@ scripts/               Developer and automation scripts.
 - [Phase 2 security proof](docs/phase-2-security-proof.md)
 - [Phase 2 release notes](docs/phase-2-release-notes.md)
 - [Phase 2 demo runbook](docs/phase-2-demo-runbook.md)
+- [Phase 3 release notes](docs/phase-3-release-notes.md)
+- [Phase 3 demo runbook](docs/phase-3-demo-runbook.md)
 - [Phase 1 alpha readiness](docs/phase-1-readiness.md)
 - [ADRs](docs/adr/README.md)
 - [Glossary](docs/glossary.md)
@@ -136,7 +141,7 @@ uv run alembic downgrade 0006_sessions
 uv run alembic upgrade head
 ```
 
-Expected Phase 2 head is `0007_security_audit_events`. `uv run alembic check` currently reports known pre-existing metadata drift for unique/index modeling and one audit JSON default; see [Security](docs/security.md).
+Expected Phase 3 head is `0011_cases`.
 
 ## Frontend Workspace
 
@@ -185,7 +190,7 @@ GitHub Actions runs backend quality/integration, frontend quality/build, and Doc
 
 ## Versioning
 
-Phase 1 used `v0.1.0-alpha.1`. The recommended Phase 2 tag after merge is `v0.2.0-alpha.1`; do not create the tag until the final Phase 2 PR is merged and CI is green on the release branch.
+Phase 1 used `v0.1.0-alpha.1`, and Phase 2 used `v0.2.0-alpha.1`. The recommended Phase 3 tag after merge is `v0.3.0-alpha.1`; do not create the tag until the final Phase 3 PR is merged and CI is green on the release branch.
 
 ## Contributing
 

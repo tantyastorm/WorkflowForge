@@ -6,6 +6,7 @@ from typing import Any
 
 from workflowforge_infrastructure.config import Settings, get_settings
 from workflowforge_infrastructure.tasks.diagnostics import register_diagnostic_tasks
+from workflowforge_infrastructure.tasks.documents import register_document_tasks
 from workflowforge_infrastructure.tasks.schedules import register_periodic_schedules
 from workflowforge_infrastructure.tasks.security import register_security_tasks
 
@@ -46,6 +47,7 @@ def create_celery_app(settings: Settings | None = None) -> Any:
         result_expires=3600,
     )
     register_diagnostic_tasks(app, resolved_settings)
+    register_document_tasks(app, resolved_settings)
     register_security_tasks(app, resolved_settings)
     register_periodic_schedules(app, resolved_settings)
     return app

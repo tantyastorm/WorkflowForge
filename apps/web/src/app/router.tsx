@@ -12,6 +12,9 @@ import { LoginPage } from "../features/auth/LoginPage";
 import { OrganizationSelectionPage } from "../features/auth/OrganizationSelectionPage";
 import { TenantContextPage } from "../features/auth/TenantContextPage";
 import { HomePage } from "../features/home/HomePage";
+import { BatchesPage } from "../features/phase3/BatchesPage";
+import { CasesPage } from "../features/phase3/CasesPage";
+import { DocumentsPage } from "../features/phase3/DocumentsPage";
 import { SystemStatusPage } from "../features/system-status/SystemStatusPage";
 
 export const appRoutes: RouteObject[] = [
@@ -54,6 +57,42 @@ export const appRoutes: RouteObject[] = [
           <RequireAuthentication>
             <RequireOrganization>
               <SystemStatusPage />
+            </RequireOrganization>
+          </RequireAuthentication>
+        ),
+      },
+      {
+        path: "/app/documents",
+        element: (
+          <RequireAuthentication>
+            <RequireOrganization>
+              <RequirePermission permission="document.read">
+                <DocumentsPage />
+              </RequirePermission>
+            </RequireOrganization>
+          </RequireAuthentication>
+        ),
+      },
+      {
+        path: "/app/batches",
+        element: (
+          <RequireAuthentication>
+            <RequireOrganization>
+              <RequirePermission permission="batch.read">
+                <BatchesPage />
+              </RequirePermission>
+            </RequireOrganization>
+          </RequireAuthentication>
+        ),
+      },
+      {
+        path: "/app/cases",
+        element: (
+          <RequireAuthentication>
+            <RequireOrganization>
+              <RequirePermission permission="case.read">
+                <CasesPage />
+              </RequirePermission>
             </RequireOrganization>
           </RequireAuthentication>
         ),
