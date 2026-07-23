@@ -20,6 +20,7 @@ from workflowforge_application.authorization import (
     TenantContext,
     TenantMembershipInactive,
 )
+from workflowforge_application.documents import UploadDocument
 from workflowforge_application.health import DependencyHealthService
 from workflowforge_application.identity import (
     AuthenticateUser,
@@ -44,6 +45,10 @@ from workflowforge_infrastructure.database import (
     async_session_scope,
     create_async_session_factory,
 )
+from workflowforge_infrastructure.documents import (
+    SqlAlchemyDocumentRepository,
+    SqlAlchemyUploadIdempotencyRepository,
+)
 from workflowforge_infrastructure.identity import (
     Argon2PasswordHasher,
     JwtAccessTokenCodec,
@@ -58,6 +63,7 @@ from workflowforge_infrastructure.identity import (
     Uuid4Generator,
 )
 from workflowforge_infrastructure.security import RedisAuthenticationRateLimiter
+from workflowforge_infrastructure.storage import S3ObjectStorage
 
 from workflowforge_api.audit import (
     IndependentSqlAlchemyAuditRecorder,
@@ -256,6 +262,25 @@ def get_authentication_rate_limiter(request: Request) -> AuthenticationRateLimit
     return RedisAuthenticationRateLimiter(
         request.app.state.redis_client,
         get_settings(request).rate_limit,
+    )
+
+
+def get_upload_document(
+    settings: Annotated[Settings, Depends(get_settings)],
+    session: Annotated[AsyncSession, Depends(get_database_session)],
+    request: Request,
+) -> UploadDocument:
+    """Compose the document upload use case."""
+
+    return UploadDocument(
+        documents=SqlAlchemyDocumentRepository(session),
+        idempotency=SqlAlchemyUploadIdempotencyRepository(session),
+        storage=S3ObjectStorage(request.app.state.s3_client, settings.s3),
+        transaction=SqlAlchemyTransactionManager(session),
+        audit=SqlAlchemyAuditRepository(session),
+        ids=Uuid4Generator(),
+        max_bytes=settings.document_upload.max_bytes,
+        idempotency_ttl=timedelta(seconds=settings.document_upload.idempotency_ttl_seconds),
     )
 
 

@@ -5,6 +5,7 @@ description = "WorkflowForge API process composition package."
 requires-python = ">=3.12,<3.13"
 dependencies = [
   "fastapi>=0.139.2",
+  "python-multipart>=0.0.20",
   "uvicorn[standard]>=0.51.0",
   "workflowforge-application",
   "workflowforge-contracts",
