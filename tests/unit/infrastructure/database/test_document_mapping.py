@@ -1,7 +1,9 @@
 """Document persistence mapping tests."""
 
 from datetime import UTC, datetime
+from typing import cast
 
+from sqlalchemy import Table
 from workflowforge_domain.documents import (
     ContentHash,
     Document,
@@ -32,11 +34,14 @@ def test_document_record_mapping_round_trips_domain_values() -> None:
 
 
 def test_document_record_table_defines_expected_constraints() -> None:
-    table = DocumentRecord.__table__
+    table = cast(Table, DocumentRecord.__table__)
+    constraint_names = {constraint.name for constraint in table.constraints}
+    index_names = {index.name for index in table.indexes}
 
     assert [column.name for column in table.primary_key] == ["id"]
-    assert table.c.content_hash.unique is True
-    assert table.c.storage_object_key.unique is True
+    assert "uq_documents_content_hash" in constraint_names
+    assert "uq_documents_storage_object_key" in constraint_names
+    assert "ix_documents_content_hash" in index_names
     assert table.c.original_filename.nullable is False
     assert table.c.byte_size.nullable is False
 

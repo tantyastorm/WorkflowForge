@@ -38,6 +38,8 @@ class UserRecord(Base):
             "(is_active = false AND disabled_at IS NOT NULL)",
             name="active_disabled_timestamp_consistent",
         ),
+        UniqueConstraint("normalized_email", name="uq_users_normalized_email"),
+        Index("ix_users_normalized_email", "normalized_email"),
     )
 
     id: Mapped[UUID] = mapped_column(primary_key=True)
@@ -45,8 +47,6 @@ class UserRecord(Base):
     normalized_email: Mapped[str] = mapped_column(
         String(EMAIL_MAX_LENGTH),
         nullable=False,
-        unique=True,
-        index=True,
     )
     display_name: Mapped[str] = mapped_column(
         String(DISPLAY_NAME_MAX_LENGTH),
@@ -68,6 +68,8 @@ class OrganizationRecord(Base):
             "(is_active = false AND deactivated_at IS NOT NULL)",
             name="active_deactivated_timestamp_consistent",
         ),
+        UniqueConstraint("slug", name="uq_organizations_slug"),
+        Index("ix_organizations_slug", "slug"),
     )
 
     id: Mapped[UUID] = mapped_column(primary_key=True)
@@ -75,8 +77,6 @@ class OrganizationRecord(Base):
     slug: Mapped[str] = mapped_column(
         String(ORGANIZATION_SLUG_MAX_LENGTH),
         nullable=False,
-        unique=True,
-        index=True,
     )
     is_active: Mapped[bool] = mapped_column(nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)

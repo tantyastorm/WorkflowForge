@@ -4,7 +4,7 @@ from datetime import datetime
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import DateTime, ForeignKey, Index, String
+from sqlalchemy import DateTime, ForeignKey, Index, String, text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 from workflowforge_domain.audit import (
@@ -62,6 +62,7 @@ class SecurityAuditEventRecord(Base):
         "metadata",
         JSONB,
         nullable=False,
+        server_default=text("'{}'::jsonb"),
         default=dict,
     )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)

@@ -130,10 +130,14 @@ def test_refresh_token_record_mapping_round_trips_without_digest_repr_leak() -> 
 
 
 def test_identity_tables_define_expected_constraints_and_indexes() -> None:
-    assert UserRecord.__table__.c.normalized_email.unique is True
-    assert UserRecord.__table__.c.normalized_email.index is True
-    assert OrganizationRecord.__table__.c.slug.unique is True
-    assert OrganizationRecord.__table__.c.slug.index is True
+    user_table = cast(Table, UserRecord.__table__)
+    organization_table = cast(Table, OrganizationRecord.__table__)
+    user_constraints = {constraint.name for constraint in user_table.constraints if constraint.name}
+    user_indexes = {index.name for index in user_table.indexes}
+    organization_constraints = {
+        constraint.name for constraint in organization_table.constraints if constraint.name
+    }
+    organization_indexes = {index.name for index in organization_table.indexes}
 
     membership_table = cast(Table, MembershipRecord.__table__)
     unique_constraints = {
@@ -141,6 +145,10 @@ def test_identity_tables_define_expected_constraints_and_indexes() -> None:
     }
     indexes = {index.name for index in membership_table.indexes}
 
+    assert "uq_users_normalized_email" in user_constraints
+    assert "ix_users_normalized_email" in user_indexes
+    assert "uq_organizations_slug" in organization_constraints
+    assert "ix_organizations_slug" in organization_indexes
     assert PasswordCredentialRecord.__table__.c.user_id.primary_key is True
     assert PasswordCredentialRecord.__table__.c.password_hash.nullable is False
     assert AuthSessionRecord.__table__.c.user_id.nullable is False
