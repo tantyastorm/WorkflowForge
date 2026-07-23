@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
@@ -144,11 +145,26 @@ def _ensure_bucket(settings: Settings) -> None:
 
 
 def _s3_settings() -> S3Settings:
+    s3_endpoint_url = os.environ.get("WORKFLOWFORGE_TEST_S3_ENDPOINT_URL")
+    if s3_endpoint_url is None:
+        minio_port = int(os.environ.get("WORKFLOWFORGE_TEST_MINIO_API_HOST_PORT", "9000"))
+        s3_endpoint_url = f"http://localhost:{minio_port}"
     return S3Settings(
-        endpoint_url="http://localhost:29000",
-        access_key="workflowforge_phase3",
-        secret_key=SecretStr("workflowforge_phase3_minio_secret"),
-        bucket="workflowforge-phase3",
+        endpoint_url=s3_endpoint_url,
+        access_key=os.environ.get(
+            "WORKFLOWFORGE_TEST_S3_ACCESS_KEY",
+            os.environ.get("WORKFLOWFORGE_S3_ACCESS_KEY", "workflowforge"),
+        ),
+        secret_key=SecretStr(
+            os.environ.get(
+                "WORKFLOWFORGE_TEST_S3_SECRET_KEY",
+                os.environ.get("WORKFLOWFORGE_S3_SECRET_KEY", "workflowforge_dev_secret"),
+            )
+        ),
+        bucket=os.environ.get(
+            "WORKFLOWFORGE_TEST_S3_BUCKET",
+            os.environ.get("WORKFLOWFORGE_S3_BUCKET", "workflowforge"),
+        ),
     )
 
 
