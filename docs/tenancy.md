@@ -1,6 +1,6 @@
 # Tenancy
 
-This document records the WorkflowForge tenancy foundation implemented for Phase 2.
+This document records the WorkflowForge tenancy foundation implemented through Phase 3 Step 2.
 
 ## Tenant Context Transport
 
@@ -55,6 +55,12 @@ Repository interfaces for tenant-owned data should accept `organization_id` or `
 
 Phase 2 persists organizations and memberships. Organization ownership is represented through owner memberships, not an `owner_user_id` shortcut on organizations. Membership repository operations that retrieve tenant-owned membership records include `organization_id` where appropriate.
 
+Phase 3 Step 2 applies the same rule to documents. `Document` is owned by one
+organization, `DocumentVersion` and `DocumentArtifact` rows carry the same
+organization ID, and repository methods for persisted document resources require
+tenant scope. Composite foreign keys enforce document/version tenant consistency
+where practical.
+
 ## PostgreSQL RLS Deferral
 
 PostgreSQL row-level security is deferred for Phase 2.
@@ -68,6 +74,12 @@ Strict repository enforcement is easier to review and test now. RLS may be intro
 Tenant-owned uniqueness should be scoped with `organization_id` unless the business rule is intentionally global. Examples include future workflow names, provider credential labels, membership invite records, and user-visible resource identifiers.
 
 Global uniqueness remains appropriate for normalized user email addresses and other identity records that represent a person or credential outside a specific organization.
+
+Document exact-duplicate detection is tenant-scoped. A SHA-256 content hash is
+unique within one organization and returns the existing document resource for
+that tenant, but the same bytes may be registered independently by another
+organization. Storage keys also include the organization ID and are unique within
+the tenant.
 
 ## Cross-Tenant Errors
 

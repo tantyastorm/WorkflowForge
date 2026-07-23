@@ -1,6 +1,6 @@
 # Security
 
-This document records the WorkflowForge security foundation for Phase 2.
+This document records the WorkflowForge security foundation through Phase 3 Step 2.
 
 ## Security Principles
 
@@ -33,6 +33,21 @@ envelope and returns a generic tenant-access denial for missing, inactive, or
 unusable membership. Permission denial remains a separate `403` response so
 authentication, tenant access, and authorization failures stay distinguishable
 inside the application boundary.
+
+Phase 3 Step 2 document use cases receive the same explicit `TenantContext`.
+Document repositories require `organization_id` for persisted lookups, and
+document/version/artifact tables use composite tenant-aware constraints where
+practical. Object-storage keys include the owning organization ID and never
+include user-provided filenames:
+
+```text
+documents/{organization_id}/sha256/{first_2}/{next_2}/{full_hash}
+tmp/{organization_id}/{upload_id}
+artifacts/{organization_id}/{document_id}/{artifact_type}/{artifact_id}
+```
+
+Signed download URL creation exists only behind the application object-storage
+port in Step 2. HTTP download endpoints and upload orchestration are deferred.
 
 Refresh-cookie endpoints must use:
 
@@ -213,13 +228,10 @@ exceed 90 days.
 
 Security domain rules belong in `packages/domain` when they are product invariants. Security policies, authentication use cases, authorization checks, and security ports belong in `packages/application` or `packages/contracts` as appropriate. Cryptography, token signing, digesting, persistence, and Redis-backed rate-limiting adapters belong in `packages/infrastructure`. HTTP headers, cookies, CSRF validation, Origin validation, and dependency composition belong in `apps/api`. Frontend token handling and organization UX belong in `apps/web`.
 
-## Known Migration Metadata Drift
+## Migration Metadata Status
 
-As of commit `030a1c3`, `uv run alembic check` reports pre-existing
-autogenerate drift for unique-index metadata on `documents.content_hash`,
-`organizations.slug`, and `users.normalized_email`, plus the
-`security_audit_events.metadata` server default. The same drift is present on
-the parent commit before the Phase 2 Step 13 React authentication work, and the
-repository migration integration tests remain the source of truth until the
-metadata/modeling mismatch is resolved in a dedicated migration-maintenance
-change.
+Phase 3 Step 1 aligned ORM metadata with the Phase 2 schema without a schema
+migration. Phase 3 Step 2 migration `0008_doc_tenancy_versions` is represented
+by matching SQLAlchemy metadata, including JSONB defaults and named
+tenant-aware constraints. `uv run alembic check` is expected to remain clean
+against a database at the current head.

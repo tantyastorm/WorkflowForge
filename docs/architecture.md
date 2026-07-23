@@ -339,15 +339,32 @@ The API creates durable intent in PostgreSQL before publishing asynchronous work
 
 Retries must be explicit and bounded. Tasks must be idempotent where retries are possible. Task publication failures must be observable. The scheduler publishes work but does not own durable workflow state. Dead-letter handling is planned for execution phases.
 
-## Document Metadata Foundation
+## Document Domain And Storage Foundation
 
-The first Phase 2 business table is `documents`. It stores durable metadata for a future uploaded object: stable document ID, user-facing original filename, media type, byte size, SHA-256 content hash, deterministic storage object key, lifecycle status, and timestamps.
+Phase 3 Step 2 makes `Document` a tenant-owned aggregate root. It stores document identity, `organization_id`, display filename, source type and optional source reference, operational status, current-version reference, archive metadata, actor metadata, timestamps, and an optimistic `lock_version`.
 
-The document domain remains independent from SQLAlchemy, FastAPI, S3, Celery, and AI providers. Application services define the registration and retrieval use cases behind a repository port. Infrastructure implements that port with SQLAlchemy and maps database rows back to domain objects.
+Binary metadata belongs to immutable `DocumentVersion` rows. Each version stores the original filename, media type, byte size, lowercase SHA-256 content hash, object-storage key, storage state (`pending`, `stored`, or `failed`), version number, creator, and creation timestamp. Version numbers start at `1` and are unique per document. Current-version changes mutate only the document aggregate pointer and lock version; version content is not edited in place.
 
-The initial duplicate-content policy is idempotent by content hash in the current non-tenant model: registering identical content returns the existing document metadata. The database enforces unique `content_hash` and `storage_object_key` values so concurrent inserts cannot create duplicate rows. If tenants are introduced later, uniqueness can become tenant-scoped in a migration without changing the domain concept that a content hash identifies bytes.
+`DocumentArtifact` records represent real stored objects derived from or associated with a document. Artifacts are tenant/document-owned, may reference a specific version, and store artifact type, media type, byte size, optional hash, object key, bounded JSON metadata, creator, and timestamp. Step 2 does not create placeholder artifacts and does not implement extraction, previews, OCR, exports, review, approval, or AI providers.
 
-Storage keys are metadata only in this step. The format is `documents/sha256/<first-two-hex>/<next-two-hex>/<sha256>`, derived from the normalized SHA-256 content hash and independent from the original filename. This keeps keys deterministic, path-safe, and suitable for future MinIO writes without storing file bytes yet.
+Exact duplicate detection is tenant-scoped. `document_versions` enforces unique `(organization_id, content_hash)` and `(organization_id, storage_object_key)`. The approved policy is that the same bytes in one tenant return the existing document resource, while the same bytes in different tenants do not conflict.
+
+Final document binary keys are deterministic and tenant-safe:
+
+```text
+documents/{organization_id}/sha256/{first_2}/{next_2}/{full_hash}
+```
+
+Reserved layouts for later steps are:
+
+```text
+tmp/{organization_id}/{upload_id}
+artifacts/{organization_id}/{document_id}/{artifact_type}/{artifact_id}
+```
+
+Object keys are internal implementation details, contain no user filename, and are validated as path-safe segments. Step 2 adds an application `ObjectStorage` port and S3-compatible adapter foundation for temporary writes, copy-plus-delete promotion, object head, delete, and download URL creation. It does not connect those operations to HTTP upload endpoints.
+
+PostgreSQL and object storage are separate systems. Step 2 records storage state so future upload orchestration can register metadata, perform storage work, then mark success or failure without pretending there is a distributed transaction. S3-compatible promotion is copy plus delete, not atomic rename.
 
 ## Identity, Tenancy, Authorization, And Audit Foundation
 
