@@ -19,15 +19,48 @@ _ROLE_PERMISSIONS = MappingProxyType(
                 Permission.AUDIT_READ,
                 Permission.API_KEYS_MANAGE,
                 Permission.PROVIDER_CREDENTIALS_MANAGE,
+                Permission.DOCUMENT_READ,
+                Permission.DOCUMENT_WRITE,
+                Permission.DOCUMENT_ARCHIVE,
+                Permission.DOCUMENT_DOWNLOAD,
+                Permission.DOCUMENT_VERSION_READ,
+                Permission.DOCUMENT_VERSION_CREATE,
+                Permission.ARTIFACT_READ,
+                Permission.ARTIFACT_DOWNLOAD,
             }
         ),
-        Role.OPERATOR: frozenset({Permission.ORGANIZATION_READ}),
-        Role.REVIEWER: frozenset({Permission.ORGANIZATION_READ}),
+        Role.OPERATOR: frozenset(
+            {
+                Permission.ORGANIZATION_READ,
+                Permission.DOCUMENT_READ,
+                Permission.DOCUMENT_WRITE,
+                Permission.DOCUMENT_DOWNLOAD,
+                Permission.DOCUMENT_VERSION_READ,
+                Permission.DOCUMENT_VERSION_CREATE,
+                Permission.ARTIFACT_READ,
+                Permission.ARTIFACT_DOWNLOAD,
+            }
+        ),
+        Role.REVIEWER: frozenset(
+            {
+                Permission.ORGANIZATION_READ,
+                Permission.DOCUMENT_READ,
+                Permission.DOCUMENT_DOWNLOAD,
+                Permission.DOCUMENT_VERSION_READ,
+                Permission.ARTIFACT_READ,
+                Permission.ARTIFACT_DOWNLOAD,
+            }
+        ),
         Role.AUDITOR: frozenset(
             {
                 Permission.ORGANIZATION_READ,
                 Permission.MEMBERSHIP_READ,
                 Permission.AUDIT_READ,
+                Permission.DOCUMENT_READ,
+                Permission.DOCUMENT_DOWNLOAD,
+                Permission.DOCUMENT_VERSION_READ,
+                Permission.ARTIFACT_READ,
+                Permission.ARTIFACT_DOWNLOAD,
             }
         ),
     }

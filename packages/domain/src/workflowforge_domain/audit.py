@@ -69,6 +69,10 @@ class AuditEventType(StrEnum):
     AUTHENTICATION_LOGIN_RATE_LIMITED = "authentication.login_rate_limited"
     SESSION_REFRESH_RATE_LIMITED = "session.refresh_rate_limited"
     SECURITY_RATE_LIMIT_BACKEND_UNAVAILABLE = "security.rate_limit_backend_unavailable"
+    DOCUMENT_REGISTERED = "document.registered"
+    DOCUMENT_VERSION_CREATED = "document.version_created"
+    DOCUMENT_ARCHIVED = "document.archived"
+    DOCUMENT_ARTIFACT_REGISTERED = "document.artifact_registered"
 
 
 class AuditOutcome(StrEnum):
