@@ -29,6 +29,17 @@ def test_permission_values_are_stable_and_complete() -> None:
         "document_version.create",
         "artifact.read",
         "artifact.download",
+        "batch.read",
+        "batch.write",
+        "batch.archive",
+        "batch.manage_documents",
+        "case.read",
+        "case.write",
+        "case.archive",
+        "case.manage_documents",
+        "case.comment",
+        "case.task",
+        "case.decision",
     ]
     assert str(Permission.ORGANIZATION_READ) == "organization.read"
 
@@ -55,6 +66,17 @@ def test_every_role_has_explicit_permissions() -> None:
                 Permission.DOCUMENT_VERSION_CREATE,
                 Permission.ARTIFACT_READ,
                 Permission.ARTIFACT_DOWNLOAD,
+                Permission.BATCH_READ,
+                Permission.BATCH_WRITE,
+                Permission.BATCH_ARCHIVE,
+                Permission.BATCH_MANAGE_DOCUMENTS,
+                Permission.CASE_READ,
+                Permission.CASE_WRITE,
+                Permission.CASE_ARCHIVE,
+                Permission.CASE_MANAGE_DOCUMENTS,
+                Permission.CASE_COMMENT,
+                Permission.CASE_TASK,
+                Permission.CASE_DECISION,
             }
         ),
         Role.OPERATOR: frozenset(
@@ -67,6 +89,15 @@ def test_every_role_has_explicit_permissions() -> None:
                 Permission.DOCUMENT_VERSION_CREATE,
                 Permission.ARTIFACT_READ,
                 Permission.ARTIFACT_DOWNLOAD,
+                Permission.BATCH_READ,
+                Permission.BATCH_WRITE,
+                Permission.BATCH_MANAGE_DOCUMENTS,
+                Permission.CASE_READ,
+                Permission.CASE_WRITE,
+                Permission.CASE_MANAGE_DOCUMENTS,
+                Permission.CASE_COMMENT,
+                Permission.CASE_TASK,
+                Permission.CASE_DECISION,
             }
         ),
         Role.REVIEWER: frozenset(
@@ -77,6 +108,11 @@ def test_every_role_has_explicit_permissions() -> None:
                 Permission.DOCUMENT_VERSION_READ,
                 Permission.ARTIFACT_READ,
                 Permission.ARTIFACT_DOWNLOAD,
+                Permission.BATCH_READ,
+                Permission.CASE_READ,
+                Permission.CASE_COMMENT,
+                Permission.CASE_TASK,
+                Permission.CASE_DECISION,
             }
         ),
         Role.AUDITOR: frozenset(
@@ -89,6 +125,8 @@ def test_every_role_has_explicit_permissions() -> None:
                 Permission.DOCUMENT_VERSION_READ,
                 Permission.ARTIFACT_READ,
                 Permission.ARTIFACT_DOWNLOAD,
+                Permission.BATCH_READ,
+                Permission.CASE_READ,
             }
         ),
     }
@@ -120,6 +158,17 @@ def test_admin_permission_matrix_is_exact_and_excludes_security_manage() -> None
             Permission.DOCUMENT_VERSION_CREATE,
             Permission.ARTIFACT_READ,
             Permission.ARTIFACT_DOWNLOAD,
+            Permission.BATCH_READ,
+            Permission.BATCH_WRITE,
+            Permission.BATCH_ARCHIVE,
+            Permission.BATCH_MANAGE_DOCUMENTS,
+            Permission.CASE_READ,
+            Permission.CASE_WRITE,
+            Permission.CASE_ARCHIVE,
+            Permission.CASE_MANAGE_DOCUMENTS,
+            Permission.CASE_COMMENT,
+            Permission.CASE_TASK,
+            Permission.CASE_DECISION,
         }
     )
     assert Permission.SECURITY_MANAGE not in permissions
@@ -136,6 +185,15 @@ def test_operator_reviewer_and_auditor_permission_matrices_are_exact() -> None:
             Permission.DOCUMENT_VERSION_CREATE,
             Permission.ARTIFACT_READ,
             Permission.ARTIFACT_DOWNLOAD,
+            Permission.BATCH_READ,
+            Permission.BATCH_WRITE,
+            Permission.BATCH_MANAGE_DOCUMENTS,
+            Permission.CASE_READ,
+            Permission.CASE_WRITE,
+            Permission.CASE_MANAGE_DOCUMENTS,
+            Permission.CASE_COMMENT,
+            Permission.CASE_TASK,
+            Permission.CASE_DECISION,
         }
     )
     assert permissions_for_role(Role.REVIEWER) == frozenset(
@@ -146,6 +204,11 @@ def test_operator_reviewer_and_auditor_permission_matrices_are_exact() -> None:
             Permission.DOCUMENT_VERSION_READ,
             Permission.ARTIFACT_READ,
             Permission.ARTIFACT_DOWNLOAD,
+            Permission.BATCH_READ,
+            Permission.CASE_READ,
+            Permission.CASE_COMMENT,
+            Permission.CASE_TASK,
+            Permission.CASE_DECISION,
         }
     )
     assert permissions_for_role(Role.AUDITOR) == frozenset(
@@ -158,6 +221,8 @@ def test_operator_reviewer_and_auditor_permission_matrices_are_exact() -> None:
             Permission.DOCUMENT_VERSION_READ,
             Permission.ARTIFACT_READ,
             Permission.ARTIFACT_DOWNLOAD,
+            Permission.BATCH_READ,
+            Permission.CASE_READ,
         }
     )
 

@@ -26,11 +26,15 @@ from workflowforge_domain.documents import (
 class DocumentListFilter:
     """Tenant-scoped list query parameters."""
 
-    limit: int = 50
+    limit: int = 25
     offset: int = 0
     status: DocumentStatus | None = None
-    include_archived: bool = False
+    archived: bool | None = None
     source_type: DocumentSourceType | None = None
+    media_type: str | None = None
+    created_from: datetime | None = None
+    created_to: datetime | None = None
+    filename: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -43,9 +47,22 @@ class DocumentProjection:
     source_type: DocumentSourceType
     status: DocumentStatus
     current_version_id: DocumentVersionId
+    media_type: str
+    byte_size: int
+    storage_state: str
     created_at: datetime
     updated_at: datetime
     lock_version: int
+
+
+@dataclass(frozen=True, slots=True)
+class DocumentListPage:
+    """Offset-paginated document projection page."""
+
+    items: list[DocumentProjection]
+    total: int
+    limit: int
+    offset: int
 
 
 @dataclass(frozen=True, slots=True)
@@ -146,7 +163,7 @@ class DocumentRepository(Protocol):
         *,
         organization_id: UUID,
         query: DocumentListFilter,
-    ) -> list[DocumentProjection]:
+    ) -> DocumentListPage:
         """Return tenant-scoped document projections."""
 
     async def archive_document(self, document: Document) -> Document:
@@ -171,6 +188,14 @@ class DocumentRepository(Protocol):
         document_id: DocumentId,
     ) -> list[DocumentVersion]:
         """Return versions for a tenant-scoped document."""
+
+    async def list_artifacts(
+        self,
+        *,
+        organization_id: UUID,
+        document_id: DocumentId,
+    ) -> list[DocumentArtifact]:
+        """Return artifacts for a tenant-scoped document."""
 
     async def set_current_version(
         self,

@@ -29,6 +29,7 @@ from workflowforge_domain.identity import Permission
 from workflowforge_application.audit import AuditRecorder
 from workflowforge_application.authorization import AuthorizationPolicy, TenantContext
 from workflowforge_application.documents.errors import (
+    ConcurrencyConflictError,
     DocumentNotFoundError,
     DuplicateDocumentContentError,
     IdempotencyConflictError,
@@ -38,7 +39,7 @@ from workflowforge_application.documents.errors import (
 )
 from workflowforge_application.documents.ports import (
     DocumentListFilter,
-    DocumentProjection,
+    DocumentListPage,
     DocumentRepository,
     ObjectStorage,
     PromoteObjectRequest,
@@ -100,6 +101,37 @@ class DocumentArtifactRegistrationCommand:
     content_hash: str | None = None
     metadata: Mapping[str, object] | None = None
     audit_context: AuditRequestContext | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class DocumentArchiveCommand:
+    """Input for archiving a document with optimistic concurrency."""
+
+    document_id: DocumentId
+    expected_lock_version: int
+    audit_context: AuditRequestContext | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class DocumentDownloadCommand:
+    """Input for creating a short-lived document download URL."""
+
+    document_id: DocumentId
+    version_id: DocumentVersionId | None = None
+    artifact_id: DocumentArtifactId | None = None
+    expires_in_seconds: int = 60
+    audit_context: AuditRequestContext | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class DocumentDownloadResult:
+    """Safe signed download URL response data."""
+
+    url: str
+    expires_at: datetime
+    filename: str
+    media_type: str
+    byte_size: int
 
 
 @dataclass(frozen=True, slots=True)
@@ -238,7 +270,7 @@ class DocumentService:
         *,
         tenant: TenantContext,
         query: DocumentListFilter | None = None,
-    ) -> list[DocumentProjection]:
+    ) -> DocumentListPage:
         """Return tenant-scoped document projections."""
 
         self._authorization.require(tenant, Permission.DOCUMENT_READ)
@@ -330,15 +362,39 @@ class DocumentService:
     ) -> Document:
         """Archive a tenant-scoped document."""
 
+        return await self.archive_document_with_lock(
+            DocumentArchiveCommand(
+                document_id=document_id,
+                expected_lock_version=(
+                    await self.get_document(document_id, tenant=tenant)
+                ).lock_version,
+                audit_context=audit_context,
+            ),
+            tenant=tenant,
+            now=now,
+        )
+
+    async def archive_document_with_lock(
+        self,
+        command: DocumentArchiveCommand,
+        *,
+        tenant: TenantContext,
+        now: datetime | None = None,
+    ) -> Document:
+        """Archive a tenant-scoped document when the lock version matches."""
+
         self._authorization.require(tenant, Permission.DOCUMENT_ARCHIVE)
         timestamp = _now(now)
         document = await self._repository.get_document_for_update(
             organization_id=tenant.organization_id,
-            document_id=document_id,
+            document_id=command.document_id,
         )
         if document is None:
             msg = "Document was not found."
             raise DocumentNotFoundError(msg)
+        if document.lock_version != command.expected_lock_version:
+            msg = "Document was changed by another request."
+            raise ConcurrencyConflictError(msg)
         archived = document.archive(actor_user_id=tenant.user_id, now=timestamp)
         try:
             saved = await self._repository.archive_document(archived)
@@ -346,7 +402,7 @@ class DocumentService:
                 AuditEventType.DOCUMENT_ARCHIVED,
                 tenant=tenant,
                 target_id=saved.id.value,
-                request_context=audit_context,
+                request_context=command.audit_context,
                 now=timestamp,
             )
             await _commit(self._transaction)
@@ -354,6 +410,137 @@ class DocumentService:
         except Exception:
             await _rollback(self._transaction)
             raise
+
+    async def list_versions(
+        self,
+        document_id: DocumentId,
+        *,
+        tenant: TenantContext,
+    ) -> list[DocumentVersion]:
+        """Return tenant-scoped document versions."""
+
+        self._authorization.require(tenant, Permission.DOCUMENT_VERSION_READ)
+        document = await self.get_document(document_id, tenant=tenant)
+        return await self._repository.list_versions(
+            organization_id=tenant.organization_id,
+            document_id=document.id,
+        )
+
+    async def list_artifacts(
+        self,
+        document_id: DocumentId,
+        *,
+        tenant: TenantContext,
+    ) -> list[DocumentArtifact]:
+        """Return tenant-scoped document artifacts."""
+
+        self._authorization.require(tenant, Permission.ARTIFACT_READ)
+        document = await self.get_document(document_id, tenant=tenant)
+        return await self._repository.list_artifacts(
+            organization_id=tenant.organization_id,
+            document_id=document.id,
+        )
+
+    async def get_artifact(
+        self,
+        *,
+        tenant: TenantContext,
+        document_id: DocumentId,
+        artifact_id: DocumentArtifactId,
+    ) -> DocumentArtifact:
+        """Return one tenant-scoped artifact."""
+
+        self._authorization.require(tenant, Permission.ARTIFACT_READ)
+        document = await self.get_document(document_id, tenant=tenant)
+        artifact = await self._repository.get_artifact(
+            organization_id=tenant.organization_id,
+            document_id=document.id,
+            artifact_id=artifact_id,
+        )
+        if artifact is None:
+            msg = "Document artifact was not found."
+            raise DocumentNotFoundError(msg)
+        return artifact
+
+    async def create_download_url(
+        self,
+        command: DocumentDownloadCommand,
+        *,
+        tenant: TenantContext,
+        storage: ObjectStorage,
+        now: datetime | None = None,
+    ) -> DocumentDownloadResult:
+        """Create a short-lived signed URL for document or artifact bytes."""
+
+        timestamp = _now(now)
+        if command.artifact_id is not None:
+            self._authorization.require(tenant, Permission.ARTIFACT_DOWNLOAD)
+            document = await self.get_document(command.document_id, tenant=tenant)
+            artifact = await self._repository.get_artifact(
+                organization_id=tenant.organization_id,
+                document_id=document.id,
+                artifact_id=command.artifact_id,
+            )
+            if artifact is None:
+                msg = "Document artifact was not found."
+                raise DocumentNotFoundError(msg)
+            url = await storage.create_download_url(
+                key=artifact.storage_object_key,
+                expires_in_seconds=command.expires_in_seconds,
+                now=timestamp,
+            )
+            await self._record_document_event(
+                AuditEventType.DOCUMENT_ARTIFACT_DOWNLOADED,
+                tenant=tenant,
+                target_id=document.id.value,
+                request_context=command.audit_context,
+                now=timestamp,
+                metadata={"artifact_id": artifact.id.value},
+            )
+            return DocumentDownloadResult(
+                url=url.url,
+                expires_at=url.expires_at,
+                filename=_safe_download_filename(document.display_filename),
+                media_type=artifact.media_type,
+                byte_size=artifact.byte_size,
+            )
+
+        self._authorization.require(tenant, Permission.DOCUMENT_DOWNLOAD)
+        document = await self.get_document(command.document_id, tenant=tenant)
+        version_id = command.version_id or document.current_version_id
+        version = await self._repository.get_version(
+            organization_id=tenant.organization_id,
+            document_id=document.id,
+            version_id=version_id,
+        )
+        if version is None:
+            msg = "Document version was not found."
+            raise DocumentNotFoundError(msg)
+        url = await storage.create_download_url(
+            key=version.storage_object_key,
+            expires_in_seconds=command.expires_in_seconds,
+            now=timestamp,
+        )
+        event_type = (
+            AuditEventType.DOCUMENT_VERSION_DOWNLOADED
+            if command.version_id is not None
+            else AuditEventType.DOCUMENT_DOWNLOADED
+        )
+        await self._record_document_event(
+            event_type,
+            tenant=tenant,
+            target_id=document.id.value,
+            request_context=command.audit_context,
+            now=timestamp,
+            metadata={"version_id": version.id.value},
+        )
+        return DocumentDownloadResult(
+            url=url.url,
+            expires_at=url.expires_at,
+            filename=_safe_download_filename(version.original_filename),
+            media_type=version.media_type,
+            byte_size=version.byte_size,
+        )
 
     async def register_artifact(
         self,
@@ -1020,6 +1207,10 @@ def _new_uuid(ids: IdGenerator | None) -> UUID:
     if ids is None:
         return uuid4()
     return ids.new_uuid()
+
+
+def _safe_download_filename(filename: str) -> str:
+    return filename.replace("\r", "").replace("\n", "").replace('"', "'")
 
 
 async def _commit(transaction: TransactionManager | None) -> None:

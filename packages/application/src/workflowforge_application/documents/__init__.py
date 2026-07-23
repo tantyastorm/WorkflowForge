@@ -1,6 +1,7 @@
 """Document application services and ports."""
 
 from workflowforge_application.documents.errors import (
+    ConcurrencyConflictError,
     DocumentApplicationError,
     DocumentNotFoundError,
     DuplicateDocumentContentError,
@@ -13,6 +14,7 @@ from workflowforge_application.documents.errors import (
 )
 from workflowforge_application.documents.ports import (
     DocumentListFilter,
+    DocumentListPage,
     DocumentProjection,
     DocumentRepository,
     DownloadUrl,
@@ -25,7 +27,10 @@ from workflowforge_application.documents.ports import (
     UploadIdempotencyStatus,
 )
 from workflowforge_application.documents.service import (
+    DocumentArchiveCommand,
     DocumentArtifactRegistrationCommand,
+    DocumentDownloadCommand,
+    DocumentDownloadResult,
     DocumentRegistrationCommand,
     DocumentService,
     DocumentVersionCreationCommand,
@@ -37,8 +42,13 @@ from workflowforge_application.documents.service import (
 
 __all__ = [
     "DocumentArtifactRegistrationCommand",
+    "ConcurrencyConflictError",
     "DocumentApplicationError",
+    "DocumentArchiveCommand",
+    "DocumentDownloadCommand",
+    "DocumentDownloadResult",
     "DocumentListFilter",
+    "DocumentListPage",
     "DocumentNotFoundError",
     "DocumentProjection",
     "DocumentRegistrationCommand",

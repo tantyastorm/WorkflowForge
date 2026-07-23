@@ -42,6 +42,13 @@ def test_migrations_upgrade_from_empty_downgrade_and_reupgrade() -> None:
         table_names = set(inspector.get_table_names())
         assert table_names == {
             "alembic_version",
+            "batch_documents",
+            "batches",
+            "case_comments",
+            "case_decisions",
+            "case_documents",
+            "case_tasks",
+            "cases",
             "documents",
             "document_artifacts",
             "document_versions",
@@ -56,7 +63,7 @@ def test_migrations_upgrade_from_empty_downgrade_and_reupgrade() -> None:
         }
         with engine.connect() as connection:
             version_rows = connection.exec_driver_sql("SELECT version_num FROM alembic_version")
-            assert version_rows.scalar_one() == "0009_upload_idempotency"
+            assert version_rows.scalar_one() == "0011_cases"
     finally:
         engine.dispose()
 
@@ -235,6 +242,161 @@ def test_upload_idempotency_table_has_expected_columns_constraints_and_indexes_a
     assert "uq_upload_idempotency_organization_key" in unique_constraints
     assert "ix_upload_idempotency_organization_status" in indexes
     assert "ix_upload_idempotency_expires_at" in indexes
+
+
+@pytest.mark.integration
+def test_batch_tables_have_expected_columns_constraints_and_indexes_at_head() -> None:
+    settings = require_postgresql()
+    command.upgrade(_alembic_config(settings), "head")
+
+    engine = create_sync_migration_engine(settings)
+    try:
+        inspector = inspect(engine)
+        batch_columns = {column["name"]: column for column in inspector.get_columns("batches")}
+        batch_document_columns = {
+            column["name"]: column for column in inspector.get_columns("batch_documents")
+        }
+        batch_checks = {
+            constraint["name"] for constraint in inspector.get_check_constraints("batches")
+        }
+        batch_unique = {
+            constraint["name"] for constraint in inspector.get_unique_constraints("batches")
+        }
+        batch_document_unique = {
+            constraint["name"] for constraint in inspector.get_unique_constraints("batch_documents")
+        }
+        batch_indexes = {index["name"] for index in inspector.get_indexes("batches")}
+        batch_document_indexes = {
+            index["name"] for index in inspector.get_indexes("batch_documents")
+        }
+    finally:
+        engine.dispose()
+
+    assert set(batch_columns) == {
+        "id",
+        "organization_id",
+        "name",
+        "description",
+        "status",
+        "external_reference",
+        "created_at",
+        "created_by_user_id",
+        "updated_at",
+        "updated_by_user_id",
+        "archived_at",
+        "archived_by_user_id",
+        "lock_version",
+    }
+    assert set(batch_document_columns) == {
+        "id",
+        "organization_id",
+        "batch_id",
+        "document_id",
+        "added_at",
+        "added_by_user_id",
+    }
+    assert "ck_batches_status_valid" in batch_checks
+    assert "ck_batches_lock_version_positive" in batch_checks
+    assert "uq_batches_organization_id_id" in batch_unique
+    assert "uq_batch_documents_batch_document" in batch_document_unique
+    assert "ix_batches_organization_status" in batch_indexes
+    assert "ix_batches_organization_created_at" in batch_indexes
+    assert "ix_batch_documents_organization_batch" in batch_document_indexes
+    assert "ix_batch_documents_organization_document" in batch_document_indexes
+
+
+@pytest.mark.integration
+def test_case_tables_have_expected_columns_constraints_and_indexes_at_head() -> None:
+    settings = require_postgresql()
+    command.upgrade(_alembic_config(settings), "head")
+
+    engine = create_sync_migration_engine(settings)
+    try:
+        inspector = inspect(engine)
+        case_columns = {column["name"]: column for column in inspector.get_columns("cases")}
+        case_document_columns = {
+            column["name"]: column for column in inspector.get_columns("case_documents")
+        }
+        case_task_columns = {
+            column["name"]: column for column in inspector.get_columns("case_tasks")
+        }
+        case_checks = {
+            constraint["name"] for constraint in inspector.get_check_constraints("cases")
+        }
+        case_task_checks = {
+            constraint["name"] for constraint in inspector.get_check_constraints("case_tasks")
+        }
+        case_unique = {
+            constraint["name"] for constraint in inspector.get_unique_constraints("cases")
+        }
+        case_document_unique = {
+            constraint["name"] for constraint in inspector.get_unique_constraints("case_documents")
+        }
+        case_indexes = {index["name"] for index in inspector.get_indexes("cases")}
+        case_document_indexes = {index["name"] for index in inspector.get_indexes("case_documents")}
+        case_comment_indexes = {index["name"] for index in inspector.get_indexes("case_comments")}
+        case_task_indexes = {index["name"] for index in inspector.get_indexes("case_tasks")}
+        case_decision_indexes = {index["name"] for index in inspector.get_indexes("case_decisions")}
+    finally:
+        engine.dispose()
+
+    assert set(case_columns) == {
+        "id",
+        "organization_id",
+        "title",
+        "summary",
+        "status",
+        "priority",
+        "external_reference",
+        "created_at",
+        "created_by_user_id",
+        "updated_at",
+        "updated_by_user_id",
+        "closed_at",
+        "closed_by_user_id",
+        "archived_at",
+        "archived_by_user_id",
+        "lock_version",
+    }
+    assert set(case_document_columns) == {
+        "id",
+        "organization_id",
+        "case_id",
+        "document_id",
+        "added_at",
+        "added_by_user_id",
+    }
+    assert set(case_task_columns) == {
+        "id",
+        "organization_id",
+        "case_id",
+        "title",
+        "description",
+        "status",
+        "assigned_to_user_id",
+        "due_at",
+        "completed_at",
+        "completed_by_user_id",
+        "created_at",
+        "created_by_user_id",
+        "updated_at",
+        "updated_by_user_id",
+        "lock_version",
+    }
+    assert "ck_cases_status_valid" in case_checks
+    assert "ck_cases_priority_valid" in case_checks
+    assert "ck_cases_lock_version_positive" in case_checks
+    assert "ck_case_tasks_status_valid" in case_task_checks
+    assert "ck_case_tasks_lock_version_positive" in case_task_checks
+    assert "uq_cases_organization_id_id" in case_unique
+    assert "uq_case_documents_case_document" in case_document_unique
+    assert "ix_cases_organization_status" in case_indexes
+    assert "ix_cases_organization_priority" in case_indexes
+    assert "ix_cases_organization_created_at" in case_indexes
+    assert "ix_case_documents_organization_case" in case_document_indexes
+    assert "ix_case_comments_organization_case" in case_comment_indexes
+    assert "ix_case_tasks_organization_case" in case_task_indexes
+    assert "ix_case_decisions_organization_case" in case_decision_indexes
 
 
 @pytest.mark.integration

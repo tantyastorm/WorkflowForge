@@ -6,12 +6,22 @@ from uuid import UUID
 import pytest
 from workflowforge_application.authorization import TenantContext
 from workflowforge_application.documents import (
+    ConcurrencyConflictError,
+    DocumentArchiveCommand,
+    DocumentArtifactRegistrationCommand,
+    DocumentDownloadCommand,
     DocumentListFilter,
+    DocumentListPage,
     DocumentNotFoundError,
     DocumentProjection,
     DocumentRegistrationCommand,
     DocumentService,
+    DocumentVersionCreationCommand,
+    DownloadUrl,
     DuplicateDocumentContentError,
+    PromoteObjectRequest,
+    PutTempObjectRequest,
+    StoredObjectMetadata,
 )
 from workflowforge_application.identity.ports import TransactionManager
 from workflowforge_domain.documents import (
@@ -19,11 +29,13 @@ from workflowforge_domain.documents import (
     Document,
     DocumentArtifact,
     DocumentArtifactId,
+    DocumentArtifactType,
     DocumentId,
     DocumentSourceType,
     DocumentStorageState,
     DocumentVersion,
     DocumentVersionId,
+    StorageObjectKey,
 )
 from workflowforge_domain.identity import Permission, Role
 
@@ -120,7 +132,8 @@ async def test_list_documents_uses_tenant_filter() -> None:
         now=_now(),
     )
 
-    projections = await service.list_documents(tenant=_tenant(), query=DocumentListFilter(limit=10))
+    page = await service.list_documents(tenant=_tenant(), query=DocumentListFilter(limit=10))
+    projections = page.items
 
     assert [projection.organization_id for projection in projections] == [ORG]
 
@@ -137,6 +150,101 @@ async def test_archive_document_requires_permission_and_persists_state() -> None
     with pytest.raises(Exception, match="Permission denied"):
         await service.archive_document(
             document.id, tenant=_tenant(permissions=[Permission.DOCUMENT_READ]), now=_now(7)
+        )
+
+
+async def test_document_versions_artifacts_and_download_urls() -> None:
+    repository = InMemoryDocumentRepository()
+    audit = SpyAudit()
+    service = DocumentService(repository, audit=audit)
+    document = await service.register_document(_command(), tenant=_tenant(), now=_now())
+    version = await service.create_version(
+        DocumentVersionCreationCommand(
+            document_id=document.id,
+            original_filename='second "draft"\r\n.pdf',
+            media_type="application/pdf",
+            byte_size=456,
+            content_hash="c" * 64,
+            storage_state=DocumentStorageState.STORED,
+        ),
+        tenant=_tenant(),
+        now=_now(6),
+    )
+    artifact = await service.register_artifact(
+        DocumentArtifactRegistrationCommand(
+            document_id=document.id,
+            document_version_id=version.id,
+            artifact_type=DocumentArtifactType.TEXT,
+            media_type="text/plain",
+            byte_size=12,
+            content_hash="d" * 64,
+            storage_object_key=StorageObjectKey(
+                f"artifacts/{ORG}/{document.id.value}/{version.id.value}/text/demo.txt"
+            ),
+            metadata={"lang": "en"},
+        ),
+        tenant=_tenant(),
+        now=_now(7),
+    )
+
+    versions = await service.list_versions(document.id, tenant=_tenant())
+    artifacts = await service.list_artifacts(document.id, tenant=_tenant())
+    current_download = await service.create_download_url(
+        DocumentDownloadCommand(document_id=document.id),
+        tenant=_tenant(permissions=_download_permissions()),
+        storage=SpyStorage(),
+        now=_now(8),
+    )
+    version_download = await service.create_download_url(
+        DocumentDownloadCommand(document_id=document.id, version_id=version.id),
+        tenant=_tenant(permissions=_download_permissions()),
+        storage=SpyStorage(),
+        now=_now(9),
+    )
+    artifact_download = await service.create_download_url(
+        DocumentDownloadCommand(document_id=document.id, artifact_id=artifact.id),
+        tenant=_tenant(permissions=_artifact_download_permissions()),
+        storage=SpyStorage(),
+        now=_now(10),
+    )
+
+    assert versions[-1] == version
+    assert artifacts == [artifact]
+    assert current_download.filename == "second 'draft'.pdf"
+    assert version_download.byte_size == 456
+    assert artifact_download.media_type == "text/plain"
+    assert len(audit.events) == 6
+
+
+async def test_archive_document_with_lock_detects_concurrent_change() -> None:
+    repository = InMemoryDocumentRepository()
+    service = DocumentService(repository)
+    document = await service.register_document(_command(), tenant=_tenant(), now=_now())
+
+    with pytest.raises(ConcurrencyConflictError):
+        await service.archive_document_with_lock(
+            DocumentArchiveCommand(document_id=document.id, expected_lock_version=99),
+            tenant=_tenant(),
+            now=_now(6),
+        )
+
+
+async def test_document_artifact_and_version_not_found_paths() -> None:
+    repository = InMemoryDocumentRepository()
+    service = DocumentService(repository)
+    document = await service.register_document(_command(), tenant=_tenant(), now=_now())
+
+    with pytest.raises(DocumentNotFoundError):
+        await service.get_version(
+            tenant=_tenant(),
+            document_id=document.id,
+            version_id=DocumentVersionId(UUID("44444444-4444-4444-8444-444444444444")),
+        )
+    with pytest.raises(DocumentNotFoundError):
+        await service.get_artifact(
+            tenant=_tenant(),
+            document_id=document.id,
+            artifact_id=DocumentArtifactId(UUID("55555555-5555-4555-8555-555555555555")),
         )
 
 
@@ -192,8 +300,8 @@ class InMemoryDocumentRepository:
         *,
         organization_id: UUID,
         query: DocumentListFilter,
-    ) -> list[DocumentProjection]:
-        return [
+    ) -> DocumentListPage:
+        items = [
             DocumentProjection(
                 id=document.id,
                 organization_id=document.organization_id,
@@ -201,6 +309,9 @@ class InMemoryDocumentRepository:
                 source_type=document.source_type,
                 status=document.status,
                 current_version_id=document.current_version_id,
+                media_type=self.versions[document.current_version_id].media_type,
+                byte_size=self.versions[document.current_version_id].byte_size,
+                storage_state=self.versions[document.current_version_id].storage_state.value,
                 created_at=document.created_at,
                 updated_at=document.updated_at,
                 lock_version=document.lock_version,
@@ -208,6 +319,12 @@ class InMemoryDocumentRepository:
             for (tenant_id, _), document in self.documents.items()
             if tenant_id == organization_id
         ][: query.limit]
+        return DocumentListPage(
+            items=items,
+            total=len(items),
+            limit=query.limit,
+            offset=query.offset,
+        )
 
     async def archive_document(self, document: Document) -> Document:
         self.documents[(document.organization_id, document.id)] = document
@@ -267,6 +384,18 @@ class InMemoryDocumentRepository:
         ):
             return None
         return artifact
+
+    async def list_artifacts(
+        self,
+        *,
+        organization_id: UUID,
+        document_id: DocumentId,
+    ) -> list[DocumentArtifact]:
+        return [
+            artifact
+            for artifact in self.artifacts.values()
+            if artifact.organization_id == organization_id and artifact.document_id == document_id
+        ]
 
     async def mark_version_stored(
         self,
@@ -342,6 +471,40 @@ class SpyTransaction(TransactionManager):
         self.rollbacks += 1
 
 
+class SpyAudit:
+    def __init__(self) -> None:
+        self.events: list[object] = []
+
+    async def record(self, event: object) -> None:
+        self.events.append(event)
+
+
+class SpyStorage:
+    async def put_temp_stream(self, request: PutTempObjectRequest) -> StoredObjectMetadata:
+        return StoredObjectMetadata(key=request.key, byte_size=0, media_type=request.media_type)
+
+    async def promote_temp_object(self, request: PromoteObjectRequest) -> StoredObjectMetadata:
+        return StoredObjectMetadata(key=request.destination_key, byte_size=0)
+
+    async def head_object(self, key: StorageObjectKey) -> StoredObjectMetadata | None:
+        return StoredObjectMetadata(key=key, byte_size=0)
+
+    async def delete_object(self, key: StorageObjectKey) -> None:
+        _ = key
+
+    async def create_download_url(
+        self,
+        *,
+        key: StorageObjectKey,
+        expires_in_seconds: int,
+        now: datetime,
+    ) -> DownloadUrl:
+        return DownloadUrl(
+            url=f"https://storage.example/{key.value}?ttl={expires_in_seconds}",
+            expires_at=now,
+        )
+
+
 def _command(*, display_filename: str = "example.pdf") -> DocumentRegistrationCommand:
     return DocumentRegistrationCommand(
         display_filename=display_filename,
@@ -371,6 +534,22 @@ def _tenant(
             Permission.ARTIFACT_READ,
         ],
     )
+
+
+def _download_permissions() -> list[Permission]:
+    return [
+        Permission.DOCUMENT_READ,
+        Permission.DOCUMENT_DOWNLOAD,
+        Permission.DOCUMENT_VERSION_READ,
+    ]
+
+
+def _artifact_download_permissions() -> list[Permission]:
+    return [
+        Permission.DOCUMENT_READ,
+        Permission.ARTIFACT_READ,
+        Permission.ARTIFACT_DOWNLOAD,
+    ]
 
 
 def _now(second: int = 5) -> datetime:

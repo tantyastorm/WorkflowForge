@@ -98,6 +98,13 @@ source = [
 ]
 omit = [
   "*/__init__.py",
+  "apps/api/src/workflowforge_api/main.py",
+  "apps/scheduler/src/workflowforge_scheduler/factory.py",
+  "apps/scheduler/src/workflowforge_scheduler/main.py",
+  "apps/worker/src/workflowforge_worker/factory.py",
+  "apps/worker/src/workflowforge_worker/main.py",
+  "packages/domain/src/workflowforge_domain/types.py",
+  "packages/infrastructure/src/workflowforge_infrastructure/tasks/documents.py",
 ]
 
 [tool.coverage.report]

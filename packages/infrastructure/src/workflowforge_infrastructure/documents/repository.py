@@ -5,11 +5,12 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from uuid import UUID, uuid4
 
-from sqlalchemy import select, update
+from sqlalchemy import func, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from workflowforge_application.documents import (
     DocumentListFilter,
+    DocumentListPage,
     DocumentProjection,
     DocumentRepository,
     DuplicateDocumentContentError,
@@ -130,22 +131,51 @@ class SqlAlchemyDocumentRepository(DocumentRepository):
         *,
         organization_id: UUID,
         query: DocumentListFilter,
-    ) -> list[DocumentProjection]:
+    ) -> DocumentListPage:
         """Return tenant-scoped document projections."""
 
-        statement = select(DocumentRecord).where(DocumentRecord.organization_id == organization_id)
+        base = (
+            select(DocumentRecord, DocumentVersionRecord)
+            .join(
+                DocumentVersionRecord,
+                DocumentRecord.current_version_id == DocumentVersionRecord.id,
+            )
+            .where(
+                DocumentRecord.organization_id == organization_id,
+                DocumentVersionRecord.organization_id == organization_id,
+            )
+        )
         if query.status is not None:
-            statement = statement.where(DocumentRecord.status == query.status.value)
-        elif not query.include_archived:
-            statement = statement.where(DocumentRecord.status != DocumentStatus.ARCHIVED.value)
+            base = base.where(DocumentRecord.status == query.status.value)
+        elif query.archived is True:
+            base = base.where(DocumentRecord.status == DocumentStatus.ARCHIVED.value)
+        elif query.archived is False:
+            base = base.where(DocumentRecord.status != DocumentStatus.ARCHIVED.value)
         if query.source_type is not None:
-            statement = statement.where(DocumentRecord.source_type == query.source_type.value)
-        statement = statement.order_by(DocumentRecord.updated_at.desc(), DocumentRecord.id).limit(
+            base = base.where(DocumentRecord.source_type == query.source_type.value)
+        if query.media_type is not None:
+            base = base.where(DocumentVersionRecord.media_type == query.media_type)
+        if query.created_from is not None:
+            base = base.where(DocumentRecord.created_at >= query.created_from)
+        if query.created_to is not None:
+            base = base.where(DocumentRecord.created_at <= query.created_to)
+        if query.filename is not None:
+            base = base.where(DocumentRecord.display_filename.ilike(f"%{query.filename}%"))
+        total_result = await self._session.execute(
+            select(func.count()).select_from(base.subquery())
+        )
+        total = int(total_result.scalar_one())
+        statement = base.order_by(DocumentRecord.created_at.desc(), DocumentRecord.id.desc()).limit(
             query.limit
         )
         statement = statement.offset(query.offset)
         result = await self._session.execute(statement)
-        return [_projection_from_record(record) for record in result.scalars()]
+        return DocumentListPage(
+            items=[_projection_from_record(record, version) for record, version in result.tuples()],
+            total=total,
+            limit=query.limit,
+            offset=query.offset,
+        )
 
     async def archive_document(self, document: Document) -> Document:
         """Persist document archive state."""
@@ -204,6 +234,24 @@ class SqlAlchemyDocumentRepository(DocumentRepository):
             .order_by(DocumentVersionRecord.version_number)
         )
         return [_version_from_record(record) for record in result.scalars()]
+
+    async def list_artifacts(
+        self,
+        *,
+        organization_id: UUID,
+        document_id: DocumentId,
+    ) -> list[DocumentArtifact]:
+        """Return artifacts for a tenant-scoped document."""
+
+        result = await self._session.execute(
+            select(DocumentArtifactRecord)
+            .where(
+                DocumentArtifactRecord.organization_id == organization_id,
+                DocumentArtifactRecord.document_id == document_id.value,
+            )
+            .order_by(DocumentArtifactRecord.created_at.desc(), DocumentArtifactRecord.id.desc())
+        )
+        return [_artifact_from_record(record) for record in result.scalars()]
 
     async def set_current_version(
         self,
@@ -650,7 +698,10 @@ def _artifact_from_record(record: DocumentArtifactRecord) -> DocumentArtifact:
     )
 
 
-def _projection_from_record(record: DocumentRecord) -> DocumentProjection:
+def _projection_from_record(
+    record: DocumentRecord,
+    version: DocumentVersionRecord,
+) -> DocumentProjection:
     return DocumentProjection(
         id=DocumentId(record.id),
         organization_id=record.organization_id,
@@ -658,6 +709,9 @@ def _projection_from_record(record: DocumentRecord) -> DocumentProjection:
         source_type=DocumentSourceType(record.source_type),
         status=DocumentStatus(record.status),
         current_version_id=DocumentVersionId(record.current_version_id),
+        media_type=version.media_type,
+        byte_size=version.byte_size,
+        storage_state=version.storage_state,
         created_at=record.created_at.astimezone(UTC),
         updated_at=record.updated_at.astimezone(UTC),
         lock_version=record.lock_version,

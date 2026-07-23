@@ -164,6 +164,10 @@ class CleanupSettings(BaseSettings):
     )
 
     session_batch_limit: int = Field(default=500, gt=0, le=10_000)
+    document_batch_limit: int = Field(default=250, gt=0, le=10_000)
+    document_idempotency_retention_seconds: int = Field(default=86_400, ge=0)
+    document_temp_object_retention_seconds: int = Field(default=86_400, ge=0)
+    document_pending_storage_retention_seconds: int = Field(default=3_600, ge=0)
     expired_session_retention_seconds: int = Field(default=604_800, ge=0)
     revoked_session_retention_seconds: int = Field(default=2_592_000, ge=0)
     schedule_enabled: bool = False

@@ -19,6 +19,10 @@ class InvalidDocumentLifecycleOperationError(DocumentApplicationError):
     """Raised when a requested lifecycle operation is invalid."""
 
 
+class ConcurrencyConflictError(DocumentApplicationError):
+    """Raised when optimistic concurrency state is stale."""
+
+
 class UploadValidationError(DocumentApplicationError):
     """Raised when uploaded bytes or metadata fail validation."""
 

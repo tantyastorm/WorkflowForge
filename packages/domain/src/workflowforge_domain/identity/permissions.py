@@ -27,6 +27,17 @@ _ROLE_PERMISSIONS = MappingProxyType(
                 Permission.DOCUMENT_VERSION_CREATE,
                 Permission.ARTIFACT_READ,
                 Permission.ARTIFACT_DOWNLOAD,
+                Permission.BATCH_READ,
+                Permission.BATCH_WRITE,
+                Permission.BATCH_ARCHIVE,
+                Permission.BATCH_MANAGE_DOCUMENTS,
+                Permission.CASE_READ,
+                Permission.CASE_WRITE,
+                Permission.CASE_ARCHIVE,
+                Permission.CASE_MANAGE_DOCUMENTS,
+                Permission.CASE_COMMENT,
+                Permission.CASE_TASK,
+                Permission.CASE_DECISION,
             }
         ),
         Role.OPERATOR: frozenset(
@@ -39,6 +50,15 @@ _ROLE_PERMISSIONS = MappingProxyType(
                 Permission.DOCUMENT_VERSION_CREATE,
                 Permission.ARTIFACT_READ,
                 Permission.ARTIFACT_DOWNLOAD,
+                Permission.BATCH_READ,
+                Permission.BATCH_WRITE,
+                Permission.BATCH_MANAGE_DOCUMENTS,
+                Permission.CASE_READ,
+                Permission.CASE_WRITE,
+                Permission.CASE_MANAGE_DOCUMENTS,
+                Permission.CASE_COMMENT,
+                Permission.CASE_TASK,
+                Permission.CASE_DECISION,
             }
         ),
         Role.REVIEWER: frozenset(
@@ -49,6 +69,11 @@ _ROLE_PERMISSIONS = MappingProxyType(
                 Permission.DOCUMENT_VERSION_READ,
                 Permission.ARTIFACT_READ,
                 Permission.ARTIFACT_DOWNLOAD,
+                Permission.BATCH_READ,
+                Permission.CASE_READ,
+                Permission.CASE_COMMENT,
+                Permission.CASE_TASK,
+                Permission.CASE_DECISION,
             }
         ),
         Role.AUDITOR: frozenset(
@@ -61,6 +86,8 @@ _ROLE_PERMISSIONS = MappingProxyType(
                 Permission.DOCUMENT_VERSION_READ,
                 Permission.ARTIFACT_READ,
                 Permission.ARTIFACT_DOWNLOAD,
+                Permission.BATCH_READ,
+                Permission.CASE_READ,
             }
         ),
     }
