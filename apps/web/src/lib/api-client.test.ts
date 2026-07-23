@@ -143,6 +143,39 @@ describe("ApiClient", () => {
     expect(secondHeaders.get("Content-Type")).toBe("application/json");
   });
 
+  it("sends raw request bodies without forcing JSON content type", async () => {
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(jsonResponse({ ok: true }));
+    const client = new ApiClient({ baseUrl: "http://localhost:8000", fetchImpl: fetchMock });
+    const formData = new FormData();
+    formData.set("file", new Blob(["demo"]), "demo.txt");
+
+    await client.request("/upload", {
+      method: "POST",
+      rawBody: formData,
+      headers: { "Idempotency-Key": "upload-key" },
+    });
+
+    const requestInit = fetchMock.mock.calls[0]?.[1];
+    const headers = requestInit?.headers as Headers;
+    expect(headers.get("Content-Type")).toBeNull();
+    expect(headers.get("Idempotency-Key")).toBe("upload-key");
+    expect(requestInit?.body).toBe(formData);
+  });
+
+  it("rejects requests with both JSON and raw bodies", async () => {
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(jsonResponse({ ok: true }));
+    const client = new ApiClient({ baseUrl: "http://localhost:8000", fetchImpl: fetchMock });
+
+    await expect(
+      client.request("/upload", {
+        method: "POST",
+        body: { name: "demo" },
+        rawBody: new FormData(),
+      }),
+    ).rejects.toMatchObject({ code: "INVALID_REQUEST_BODY" });
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
   it("sends bearer and CSRF headers without exposing refresh tokens", async () => {
     document.cookie = "csrf_cookie=csrf-value; path=/";
     const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(jsonResponse({ ok: true }));

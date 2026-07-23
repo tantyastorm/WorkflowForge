@@ -560,9 +560,225 @@ a {
   background: currentColor;
 }
 
+.work-page {
+  width: 100%;
+}
+
+.work-page__header {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: var(--space-4);
+  margin-bottom: var(--space-6);
+}
+
+.work-page__eyebrow {
+  margin: 0 0 var(--space-2);
+  color: var(--color-accent-strong);
+  font-size: 0.875rem;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.work-page h1,
+.work-page h2,
+.work-page h3 {
+  margin: 0;
+  color: var(--color-text);
+}
+
+.work-page h1 {
+  font-size: 2.25rem;
+  line-height: 1.1;
+}
+
+.work-page h2 {
+  font-size: 1.25rem;
+}
+
+.work-page h3 {
+  font-size: 1rem;
+}
+
+.work-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.25fr) minmax(20rem, 0.75fr);
+  gap: var(--space-6);
+}
+
+.work-table,
+.work-detail {
+  margin-top: var(--space-4);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+}
+
+.work-row {
+  width: 100%;
+  min-height: 4rem;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto auto;
+  align-items: center;
+  gap: var(--space-4);
+  border: 0;
+  border-bottom: 1px solid var(--color-border);
+  background: transparent;
+  color: var(--color-text);
+  cursor: pointer;
+  padding: var(--space-3) var(--space-4);
+  text-align: left;
+}
+
+.work-row:hover {
+  background: var(--color-surface-muted);
+}
+
+.work-row:last-child {
+  border-bottom: 0;
+}
+
+.work-row span,
+.work-row strong,
+.work-row small {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.work-row small {
+  display: block;
+  color: var(--color-text-muted);
+}
+
+.work-detail {
+  align-self: start;
+  display: grid;
+  gap: var(--space-4);
+  padding: var(--space-4);
+}
+
+.work-detail--wide {
+  max-height: none;
+}
+
+.work-meta {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: var(--space-2) var(--space-4);
+  margin: 0;
+}
+
+.work-meta dt {
+  color: var(--color-text-muted);
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.work-meta dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.work-actions,
+.work-inline-form {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.work-inline-form .button,
+.work-actions .button,
+.work-stack-form .button,
+.work-detail > .button,
+.work-upload {
+  margin-top: 0;
+}
+
+.work-inline-form input,
+.work-inline-form select,
+.work-stack-form input,
+.work-stack-form select,
+.work-stack-form textarea {
+  min-height: 2.5rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: #ffffff;
+  color: var(--color-text);
+  padding: 0 var(--space-3);
+}
+
+.work-stack-form textarea {
+  min-height: 5rem;
+  padding-block: var(--space-2);
+  resize: vertical;
+}
+
+.work-stack-form {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.work-upload {
+  display: inline-flex;
+  align-items: center;
+}
+
+.work-upload input {
+  width: 1px;
+  height: 1px;
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.work-status,
+.work-empty {
+  color: var(--color-text-muted);
+}
+
+.work-status--error {
+  color: var(--color-danger);
+  font-weight: 700;
+}
+
+.work-chip-list,
+.work-subgrid {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.work-chip-list span {
+  min-width: 0;
+  display: block;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-muted);
+  overflow-wrap: anywhere;
+  padding: var(--space-2);
+}
+
+.work-list-block {
+  border-top: 1px solid var(--color-border);
+  padding-top: var(--space-3);
+}
+
+.work-list-block ul {
+  display: grid;
+  gap: var(--space-2);
+  margin: var(--space-2) 0 0;
+  padding-left: var(--space-4);
+}
+
+.work-list-block li {
+  overflow-wrap: anywhere;
+}
+
 @media (max-width: 48rem) {
   .app-shell__header,
   .status-page__header,
+  .work-page__header,
   .status-card__header {
     flex-direction: column;
   }
@@ -590,6 +806,19 @@ a {
   }
 
   .status-page__refresh {
+    width: 100%;
+  }
+
+  .work-layout,
+  .work-row {
+    grid-template-columns: 1fr;
+  }
+
+  .work-inline-form,
+  .work-inline-form input,
+  .work-inline-form select,
+  .work-inline-form .button,
+  .work-actions .button {
     width: 100%;
   }
 }
