@@ -366,6 +366,49 @@ Object keys are internal implementation details, contain no user filename, and a
 
 PostgreSQL and object storage are separate systems. Step 2 records storage state so future upload orchestration can register metadata, perform storage work, then mark success or failure without pretending there is a distributed transaction. S3-compatible promotion is copy plus delete, not atomic rename.
 
+Phase 3 Step 3 adds the backend upload pipeline at
+`POST /api/v1/organizations/{organization_id}/documents`. The route accepts one
+multipart `file`, requires an `Idempotency-Key` header, resolves tenant context
+from the authenticated principal, and invokes the application upload use case.
+The response exposes safe document/current-version metadata and outcome flags
+only; object keys, temporary keys, signed URLs, audit internals, and storage
+implementation details stay server-side.
+
+Upload validation is bounded to 50 MiB and supports exactly PDF, PNG, JPEG, TXT,
+HTML, and DOCX with matching filename extension and declared media type. The
+application streams upload bytes into a bounded temporary file while computing
+the SHA-256 hash from the actual bytes. Signature and structure checks reject
+unsupported extensions, media-type mismatches, empty files, oversized files,
+malformed content, and unsafe DOCX archives. DOCX is treated as a constrained
+Office document package, not arbitrary ZIP support.
+
+Upload idempotency is durable in PostgreSQL through `upload_idempotency`, scoped
+by `(organization_id, idempotency_key)`, with `in_progress`, `completed`, and
+`failed` states and a default 24-hour expiry window. The final request
+fingerprint includes the computed content hash, normalized filename, media type,
+and byte size. Reusing the same key with the same completed request replays the
+stored result; reusing it with different content or normalized metadata returns
+`409 idempotency_conflict`; concurrent in-progress use returns
+`409 idempotency_in_progress`. Non-retryable validation failures remain
+replayable as stable `422` failures, while retryable storage failures may be
+claimed again without deleting idempotency rows during the request.
+
+The upload path writes only temporary objects under
+`tmp/{organization_id}/{upload_id}` before duplicate detection and promotion.
+New content is promoted to the deterministic final document key. Tenant-scoped
+exact duplicates delete the temporary object, return the existing document with
+`200 duplicate`, and do not promote another object. Storage failures leave
+durable failed document/version or idempotency state where applicable and map to
+`503 object_storage_unavailable`.
+
+Step 3 also records upload-specific audit events:
+`document.upload_started`, `document.storage_succeeded`,
+`document.upload_failed`, and `document.duplicate_detected`. Audit metadata is
+safe and bounded. This step still excludes frontend upload UI, signed download
+API, batches, cases, workflow execution, extraction, OCR, classification, review,
+approval, AI, malware scanning, and request-time cleanup of expired
+idempotency rows.
+
 ## Identity, Tenancy, Authorization, And Audit Foundation
 
 Phase 2 identity and tenancy work implements short-lived JWT access tokens, opaque rotating refresh tokens, durable sessions, organization-scoped routes, explicit tenant context, code-defined roles and permissions, tenant-aware repositories, and append-only audit records.
