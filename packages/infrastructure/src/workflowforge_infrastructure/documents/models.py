@@ -204,3 +204,56 @@ class DocumentArtifactRecord(Base):
         ForeignKey("users.id", ondelete="RESTRICT"),
         nullable=False,
     )
+
+
+class UploadIdempotencyRecordModel(Base):
+    """Infrastructure-owned upload idempotency table."""
+
+    __tablename__ = "upload_idempotency"
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('in_progress', 'completed', 'failed')",
+            name="status_valid",
+        ),
+        CheckConstraint(
+            "response_status IS NULL OR response_status >= 100",
+            name="response_status_valid",
+        ),
+        UniqueConstraint(
+            "organization_id",
+            "idempotency_key",
+            name="uq_upload_idempotency_organization_key",
+        ),
+        ForeignKeyConstraint(
+            ["organization_id", "document_id"],
+            ["documents.organization_id", "documents.id"],
+            name="fk_upload_idempotency_organization_document_documents",
+            ondelete="SET NULL",
+        ),
+        ForeignKeyConstraint(
+            ["organization_id", "document_version_id"],
+            ["document_versions.organization_id", "document_versions.id"],
+            name="fk_upload_idempotency_organization_version_document_versions",
+            ondelete="SET NULL",
+        ),
+        Index("ix_upload_idempotency_organization_status", "organization_id", "status"),
+        Index("ix_upload_idempotency_expires_at", "expires_at"),
+    )
+
+    id: Mapped[UUID] = mapped_column(primary_key=True)
+    organization_id: Mapped[UUID] = mapped_column(
+        ForeignKey("organizations.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    idempotency_key: Mapped[str] = mapped_column(String(128), nullable=False)
+    request_fingerprint: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    status: Mapped[str] = mapped_column(String(32), nullable=False)
+    document_id: Mapped[UUID | None] = mapped_column(nullable=True)
+    document_version_id: Mapped[UUID | None] = mapped_column(nullable=True)
+    response_status: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    outcome: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    error_code: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    retryable: Mapped[bool] = mapped_column(nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)

@@ -73,6 +73,10 @@ class AuditEventType(StrEnum):
     DOCUMENT_VERSION_CREATED = "document.version_created"
     DOCUMENT_ARCHIVED = "document.archived"
     DOCUMENT_ARTIFACT_REGISTERED = "document.artifact_registered"
+    DOCUMENT_UPLOAD_STARTED = "document.upload_started"
+    DOCUMENT_STORAGE_SUCCEEDED = "document.storage_succeeded"
+    DOCUMENT_UPLOAD_FAILED = "document.upload_failed"
+    DOCUMENT_DUPLICATE_DETECTED = "document.duplicate_detected"
 
 
 class AuditOutcome(StrEnum):

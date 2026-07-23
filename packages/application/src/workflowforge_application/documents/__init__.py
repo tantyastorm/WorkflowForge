@@ -4,7 +4,12 @@ from workflowforge_application.documents.errors import (
     DocumentApplicationError,
     DocumentNotFoundError,
     DuplicateDocumentContentError,
+    IdempotencyConflictError,
+    IdempotencyInProgressError,
     InvalidDocumentLifecycleOperationError,
+    InvalidIdempotencyKeyError,
+    ObjectStorageUnavailableError,
+    UploadValidationError,
 )
 from workflowforge_application.documents.ports import (
     DocumentListFilter,
@@ -15,12 +20,19 @@ from workflowforge_application.documents.ports import (
     PromoteObjectRequest,
     PutTempObjectRequest,
     StoredObjectMetadata,
+    UploadIdempotencyRecord,
+    UploadIdempotencyRepository,
+    UploadIdempotencyStatus,
 )
 from workflowforge_application.documents.service import (
     DocumentArtifactRegistrationCommand,
     DocumentRegistrationCommand,
     DocumentService,
     DocumentVersionCreationCommand,
+    UploadDocument,
+    UploadDocumentCommand,
+    UploadDocumentOutcome,
+    UploadDocumentResult,
 )
 
 __all__ = [
@@ -35,9 +47,21 @@ __all__ = [
     "DocumentVersionCreationCommand",
     "DownloadUrl",
     "DuplicateDocumentContentError",
+    "IdempotencyConflictError",
+    "IdempotencyInProgressError",
+    "InvalidIdempotencyKeyError",
     "InvalidDocumentLifecycleOperationError",
+    "ObjectStorageUnavailableError",
     "ObjectStorage",
     "PromoteObjectRequest",
     "PutTempObjectRequest",
     "StoredObjectMetadata",
+    "UploadDocument",
+    "UploadDocumentCommand",
+    "UploadDocumentOutcome",
+    "UploadDocumentResult",
+    "UploadIdempotencyRecord",
+    "UploadIdempotencyRepository",
+    "UploadIdempotencyStatus",
+    "UploadValidationError",
 ]

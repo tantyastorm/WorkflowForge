@@ -45,6 +45,7 @@ def test_migrations_upgrade_from_empty_downgrade_and_reupgrade() -> None:
             "documents",
             "document_artifacts",
             "document_versions",
+            "upload_idempotency",
             "auth_sessions",
             "security_audit_events",
             "memberships",
@@ -55,7 +56,7 @@ def test_migrations_upgrade_from_empty_downgrade_and_reupgrade() -> None:
         }
         with engine.connect() as connection:
             version_rows = connection.exec_driver_sql("SELECT version_num FROM alembic_version")
-            assert version_rows.scalar_one() == "0008_doc_tenancy_versions"
+            assert version_rows.scalar_one() == "0009_upload_idempotency"
     finally:
         engine.dispose()
 
@@ -186,6 +187,54 @@ def test_document_version_and_artifact_tables_have_expected_constraints_at_head(
     assert "ix_document_artifacts_organization_document" in artifact_indexes
     assert "ix_document_artifacts_organization_document_type" in artifact_indexes
     assert artifact_columns["metadata"]["nullable"] is False
+
+
+@pytest.mark.integration
+def test_upload_idempotency_table_has_expected_columns_constraints_and_indexes_at_head() -> None:
+    settings = require_postgresql()
+    command.upgrade(_alembic_config(settings), "head")
+
+    engine = create_sync_migration_engine(settings)
+    try:
+        inspector = inspect(engine)
+        columns = {column["name"]: column for column in inspector.get_columns("upload_idempotency")}
+        checks = {
+            constraint["name"]
+            for constraint in inspector.get_check_constraints("upload_idempotency")
+        }
+        unique_constraints = {
+            constraint["name"]
+            for constraint in inspector.get_unique_constraints("upload_idempotency")
+        }
+        indexes = {index["name"] for index in inspector.get_indexes("upload_idempotency")}
+    finally:
+        engine.dispose()
+
+    assert set(columns) == {
+        "id",
+        "organization_id",
+        "idempotency_key",
+        "request_fingerprint",
+        "status",
+        "document_id",
+        "document_version_id",
+        "response_status",
+        "outcome",
+        "error_code",
+        "retryable",
+        "created_at",
+        "updated_at",
+        "expires_at",
+    }
+    assert columns["organization_id"]["nullable"] is False
+    assert columns["idempotency_key"]["nullable"] is False
+    assert columns["status"]["nullable"] is False
+    assert columns["retryable"]["nullable"] is False
+    assert "ck_upload_idempotency_status_valid" in checks
+    assert "ck_upload_idempotency_response_status_valid" in checks
+    assert "uq_upload_idempotency_organization_key" in unique_constraints
+    assert "ix_upload_idempotency_organization_status" in indexes
+    assert "ix_upload_idempotency_expires_at" in indexes
 
 
 @pytest.mark.integration

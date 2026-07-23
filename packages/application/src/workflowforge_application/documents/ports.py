@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime
+from enum import StrEnum
 from typing import BinaryIO, Protocol
 from uuid import UUID
 
@@ -80,6 +81,33 @@ class DownloadUrl:
     """Bounded signed-download URL result."""
 
     url: str
+    expires_at: datetime
+
+
+class UploadIdempotencyStatus(StrEnum):
+    """Durable upload idempotency state."""
+
+    IN_PROGRESS = "in_progress"
+    COMPLETED = "completed"
+    FAILED = "failed"
+
+
+@dataclass(frozen=True, slots=True)
+class UploadIdempotencyRecord:
+    """Tenant-scoped upload idempotency record."""
+
+    organization_id: UUID
+    idempotency_key: str
+    request_fingerprint: str | None
+    status: UploadIdempotencyStatus
+    document_id: DocumentId | None
+    document_version_id: DocumentVersionId | None
+    response_status: int | None
+    outcome: str | None
+    error_code: str | None
+    retryable: bool
+    created_at: datetime
+    updated_at: datetime
     expires_at: datetime
 
 
@@ -163,6 +191,93 @@ class DocumentRepository(Protocol):
         artifact_id: DocumentArtifactId,
     ) -> DocumentArtifact | None:
         """Return a tenant-scoped artifact by ID, when present."""
+
+    async def mark_version_stored(
+        self,
+        *,
+        organization_id: UUID,
+        document_id: DocumentId,
+        version_id: DocumentVersionId,
+    ) -> DocumentVersion:
+        """Mark a version's storage state as stored."""
+
+    async def mark_version_failed(
+        self,
+        *,
+        organization_id: UUID,
+        document_id: DocumentId,
+        version_id: DocumentVersionId,
+    ) -> DocumentVersion:
+        """Mark a version's storage state as failed."""
+
+
+class UploadIdempotencyRepository(Protocol):
+    """Tenant-aware upload idempotency persistence port."""
+
+    async def reserve(
+        self,
+        *,
+        organization_id: UUID,
+        idempotency_key: str,
+        now: datetime,
+        expires_at: datetime,
+    ) -> UploadIdempotencyRecord:
+        """Reserve a tenant-scoped idempotency key or return the existing record."""
+
+    async def mark_in_progress(
+        self,
+        *,
+        organization_id: UUID,
+        idempotency_key: str,
+        now: datetime,
+        expires_at: datetime,
+    ) -> UploadIdempotencyRecord:
+        """Mark a retryable failed idempotency record as in-progress."""
+
+    async def get(
+        self,
+        *,
+        organization_id: UUID,
+        idempotency_key: str,
+    ) -> UploadIdempotencyRecord | None:
+        """Return a tenant-scoped idempotency record."""
+
+    async def finalize_fingerprint(
+        self,
+        *,
+        organization_id: UUID,
+        idempotency_key: str,
+        request_fingerprint: str,
+        now: datetime,
+    ) -> UploadIdempotencyRecord:
+        """Persist the final request fingerprint."""
+
+    async def complete(
+        self,
+        *,
+        organization_id: UUID,
+        idempotency_key: str,
+        request_fingerprint: str,
+        document_id: DocumentId,
+        document_version_id: DocumentVersionId,
+        response_status: int,
+        outcome: str,
+        now: datetime,
+    ) -> UploadIdempotencyRecord:
+        """Persist a completed idempotent response."""
+
+    async def fail(
+        self,
+        *,
+        organization_id: UUID,
+        idempotency_key: str,
+        request_fingerprint: str | None,
+        error_code: str,
+        response_status: int,
+        retryable: bool,
+        now: datetime,
+    ) -> UploadIdempotencyRecord:
+        """Persist a failed idempotent response."""
 
 
 class ObjectStorage(Protocol):

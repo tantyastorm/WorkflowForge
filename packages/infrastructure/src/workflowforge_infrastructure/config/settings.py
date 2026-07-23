@@ -199,6 +199,19 @@ class S3Settings(BaseSettings):
         return value
 
 
+class DocumentUploadSettings(BaseSettings):
+    """Validated document upload settings."""
+
+    model_config = SettingsConfigDict(
+        env_prefix="WORKFLOWFORGE_DOCUMENT_UPLOAD_",
+        extra="forbid",
+        validate_default=True,
+    )
+
+    max_bytes: int = Field(default=50 * 1024 * 1024, gt=0)
+    idempotency_ttl_seconds: int = Field(default=86_400, gt=0)
+
+
 class CelerySettings(BaseSettings):
     """Validated Celery task transport settings."""
 
@@ -433,6 +446,9 @@ class Settings(BaseSettings):
     database: DatabaseSettings = Field(default_factory=lambda: DatabaseSettings())
     redis: RedisSettings = Field(default_factory=lambda: RedisSettings())
     s3: S3Settings = Field(default_factory=lambda: S3Settings())
+    document_upload: DocumentUploadSettings = Field(
+        default_factory=lambda: DocumentUploadSettings()
+    )
     celery: CelerySettings = Field(default_factory=lambda: CelerySettings())
     scheduler: SchedulerSettings = Field(default_factory=lambda: SchedulerSettings())
     auth: AuthSettings = Field(default_factory=lambda: AuthSettings())

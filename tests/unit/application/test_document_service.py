@@ -21,6 +21,7 @@ from workflowforge_domain.documents import (
     DocumentArtifactId,
     DocumentId,
     DocumentSourceType,
+    DocumentStorageState,
     DocumentVersion,
     DocumentVersionId,
 )
@@ -266,6 +267,67 @@ class InMemoryDocumentRepository:
         ):
             return None
         return artifact
+
+    async def mark_version_stored(
+        self,
+        *,
+        organization_id: UUID,
+        document_id: DocumentId,
+        version_id: DocumentVersionId,
+    ) -> DocumentVersion:
+        return await self._mark_version_storage_state(
+            organization_id=organization_id,
+            document_id=document_id,
+            version_id=version_id,
+            storage_state=DocumentStorageState.STORED,
+        )
+
+    async def mark_version_failed(
+        self,
+        *,
+        organization_id: UUID,
+        document_id: DocumentId,
+        version_id: DocumentVersionId,
+    ) -> DocumentVersion:
+        return await self._mark_version_storage_state(
+            organization_id=organization_id,
+            document_id=document_id,
+            version_id=version_id,
+            storage_state=DocumentStorageState.FAILED,
+        )
+
+    async def _mark_version_storage_state(
+        self,
+        *,
+        organization_id: UUID,
+        document_id: DocumentId,
+        version_id: DocumentVersionId,
+        storage_state: DocumentStorageState,
+    ) -> DocumentVersion:
+        version = await self.get_version(
+            organization_id=organization_id,
+            document_id=document_id,
+            version_id=version_id,
+        )
+        if version is None:
+            msg = "version not found"
+            raise ValueError(msg)
+        updated = DocumentVersion(
+            id=version.id,
+            organization_id=version.organization_id,
+            document_id=version.document_id,
+            version_number=version.version_number,
+            original_filename=version.original_filename,
+            media_type=version.media_type,
+            byte_size=version.byte_size,
+            content_hash=version.content_hash,
+            storage_object_key=version.storage_object_key,
+            storage_state=storage_state,
+            created_at=version.created_at,
+            created_by_user_id=version.created_by_user_id,
+        )
+        self.versions[version_id] = updated
+        return updated
 
 
 class SpyTransaction(TransactionManager):

@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from datetime import UTC
-from uuid import UUID
+from datetime import UTC, datetime
+from uuid import UUID, uuid4
 
 from sqlalchemy import select, update
 from sqlalchemy.exc import IntegrityError
@@ -13,6 +13,9 @@ from workflowforge_application.documents import (
     DocumentProjection,
     DocumentRepository,
     DuplicateDocumentContentError,
+    UploadIdempotencyRecord,
+    UploadIdempotencyRepository,
+    UploadIdempotencyStatus,
 )
 from workflowforge_domain.documents import (
     ContentHash,
@@ -33,6 +36,7 @@ from workflowforge_infrastructure.documents.models import (
     DocumentArtifactRecord,
     DocumentRecord,
     DocumentVersionRecord,
+    UploadIdempotencyRecordModel,
 )
 
 
@@ -247,6 +251,38 @@ class SqlAlchemyDocumentRepository(DocumentRepository):
             return None
         return _artifact_from_record(record)
 
+    async def mark_version_stored(
+        self,
+        *,
+        organization_id: UUID,
+        document_id: DocumentId,
+        version_id: DocumentVersionId,
+    ) -> DocumentVersion:
+        """Mark a version's storage state as stored."""
+
+        return await self._mark_version_storage_state(
+            organization_id=organization_id,
+            document_id=document_id,
+            version_id=version_id,
+            storage_state=DocumentStorageState.STORED,
+        )
+
+    async def mark_version_failed(
+        self,
+        *,
+        organization_id: UUID,
+        document_id: DocumentId,
+        version_id: DocumentVersionId,
+    ) -> DocumentVersion:
+        """Mark a version's storage state as failed."""
+
+        return await self._mark_version_storage_state(
+            organization_id=organization_id,
+            document_id=document_id,
+            version_id=version_id,
+            storage_state=DocumentStorageState.FAILED,
+        )
+
     async def _persist_document_state(self, document: Document) -> None:
         await self._session.execute(
             update(DocumentRecord)
@@ -269,6 +305,237 @@ class SqlAlchemyDocumentRepository(DocumentRepository):
             )
         )
         await self._session.flush()
+
+    async def _mark_version_storage_state(
+        self,
+        *,
+        organization_id: UUID,
+        document_id: DocumentId,
+        version_id: DocumentVersionId,
+        storage_state: DocumentStorageState,
+    ) -> DocumentVersion:
+        record = await self._version_record(
+            organization_id=organization_id,
+            document_id=document_id,
+            version_id=version_id,
+        )
+        if record is None:
+            msg = "Document version does not exist."
+            raise ValueError(msg)
+        record.storage_state = storage_state.value
+        await self._session.flush()
+        return _version_from_record(record)
+
+    async def _version_record(
+        self,
+        *,
+        organization_id: UUID,
+        document_id: DocumentId,
+        version_id: DocumentVersionId,
+    ) -> DocumentVersionRecord | None:
+        result = await self._session.execute(
+            select(DocumentVersionRecord).where(
+                DocumentVersionRecord.organization_id == organization_id,
+                DocumentVersionRecord.document_id == document_id.value,
+                DocumentVersionRecord.id == version_id.value,
+            )
+        )
+        return result.scalar_one_or_none()
+
+
+class SqlAlchemyUploadIdempotencyRepository(UploadIdempotencyRepository):
+    """SQLAlchemy implementation of upload idempotency persistence."""
+
+    def __init__(self, session: AsyncSession) -> None:
+        self._session = session
+
+    async def reserve(
+        self,
+        *,
+        organization_id: UUID,
+        idempotency_key: str,
+        now: datetime,
+        expires_at: datetime,
+    ) -> UploadIdempotencyRecord:
+        """Reserve a tenant-scoped idempotency key or return the existing record."""
+
+        record = UploadIdempotencyRecordModel(
+            id=uuid4(),
+            organization_id=organization_id,
+            idempotency_key=idempotency_key,
+            request_fingerprint=None,
+            status=UploadIdempotencyStatus.IN_PROGRESS.value,
+            document_id=None,
+            document_version_id=None,
+            response_status=None,
+            outcome=None,
+            error_code=None,
+            retryable=False,
+            created_at=now,
+            updated_at=now,
+            expires_at=expires_at,
+        )
+        self._session.add(record)
+        try:
+            await self._session.flush()
+        except IntegrityError:
+            await self._session.rollback()
+            existing = await self.get(
+                organization_id=organization_id,
+                idempotency_key=idempotency_key,
+            )
+            if existing is None:
+                raise
+            return existing
+        return _idempotency_from_record(record)
+
+    async def get(
+        self,
+        *,
+        organization_id: UUID,
+        idempotency_key: str,
+    ) -> UploadIdempotencyRecord | None:
+        """Return a tenant-scoped idempotency record."""
+
+        record = await self._record(
+            organization_id=organization_id,
+            idempotency_key=idempotency_key,
+        )
+        if record is None:
+            return None
+        return _idempotency_from_record(record)
+
+    async def mark_in_progress(
+        self,
+        *,
+        organization_id: UUID,
+        idempotency_key: str,
+        now: datetime,
+        expires_at: datetime,
+    ) -> UploadIdempotencyRecord:
+        """Mark a retryable failed idempotency record as in-progress."""
+
+        record = await self._required_record(
+            organization_id=organization_id,
+            idempotency_key=idempotency_key,
+        )
+        if record.status != UploadIdempotencyStatus.FAILED.value or not record.retryable:
+            msg = "Only retryable failed upload idempotency records can be retried."
+            raise ValueError(msg)
+        record.status = UploadIdempotencyStatus.IN_PROGRESS.value
+        record.response_status = None
+        record.outcome = None
+        record.error_code = None
+        record.retryable = False
+        record.updated_at = now
+        record.expires_at = expires_at
+        await self._session.flush()
+        return _idempotency_from_record(record)
+
+    async def finalize_fingerprint(
+        self,
+        *,
+        organization_id: UUID,
+        idempotency_key: str,
+        request_fingerprint: str,
+        now: datetime,
+    ) -> UploadIdempotencyRecord:
+        """Persist the final request fingerprint."""
+
+        record = await self._required_record(
+            organization_id=organization_id,
+            idempotency_key=idempotency_key,
+        )
+        record.request_fingerprint = request_fingerprint
+        record.updated_at = now
+        await self._session.flush()
+        return _idempotency_from_record(record)
+
+    async def complete(
+        self,
+        *,
+        organization_id: UUID,
+        idempotency_key: str,
+        request_fingerprint: str,
+        document_id: DocumentId,
+        document_version_id: DocumentVersionId,
+        response_status: int,
+        outcome: str,
+        now: datetime,
+    ) -> UploadIdempotencyRecord:
+        """Persist a completed idempotent response."""
+
+        record = await self._required_record(
+            organization_id=organization_id,
+            idempotency_key=idempotency_key,
+        )
+        record.request_fingerprint = request_fingerprint
+        record.status = UploadIdempotencyStatus.COMPLETED.value
+        record.document_id = document_id.value
+        record.document_version_id = document_version_id.value
+        record.response_status = response_status
+        record.outcome = outcome
+        record.error_code = None
+        record.retryable = False
+        record.updated_at = now
+        await self._session.flush()
+        return _idempotency_from_record(record)
+
+    async def fail(
+        self,
+        *,
+        organization_id: UUID,
+        idempotency_key: str,
+        request_fingerprint: str | None,
+        error_code: str,
+        response_status: int,
+        retryable: bool,
+        now: datetime,
+    ) -> UploadIdempotencyRecord:
+        """Persist a failed idempotent response."""
+
+        record = await self._required_record(
+            organization_id=organization_id,
+            idempotency_key=idempotency_key,
+        )
+        record.request_fingerprint = request_fingerprint
+        record.status = UploadIdempotencyStatus.FAILED.value
+        record.response_status = response_status
+        record.error_code = error_code
+        record.outcome = None
+        record.retryable = retryable
+        record.updated_at = now
+        await self._session.flush()
+        return _idempotency_from_record(record)
+
+    async def _required_record(
+        self,
+        *,
+        organization_id: UUID,
+        idempotency_key: str,
+    ) -> UploadIdempotencyRecordModel:
+        record = await self._record(
+            organization_id=organization_id,
+            idempotency_key=idempotency_key,
+        )
+        if record is None:
+            msg = "Upload idempotency record does not exist."
+            raise ValueError(msg)
+        return record
+
+    async def _record(
+        self,
+        *,
+        organization_id: UUID,
+        idempotency_key: str,
+    ) -> UploadIdempotencyRecordModel | None:
+        result = await self._session.execute(
+            select(UploadIdempotencyRecordModel).where(
+                UploadIdempotencyRecordModel.organization_id == organization_id,
+                UploadIdempotencyRecordModel.idempotency_key == idempotency_key,
+            )
+        )
+        return result.scalar_one_or_none()
 
 
 def _record_from_document(document: Document) -> DocumentRecord:
@@ -394,4 +661,26 @@ def _projection_from_record(record: DocumentRecord) -> DocumentProjection:
         created_at=record.created_at.astimezone(UTC),
         updated_at=record.updated_at.astimezone(UTC),
         lock_version=record.lock_version,
+    )
+
+
+def _idempotency_from_record(record: UploadIdempotencyRecordModel) -> UploadIdempotencyRecord:
+    return UploadIdempotencyRecord(
+        organization_id=record.organization_id,
+        idempotency_key=record.idempotency_key,
+        request_fingerprint=record.request_fingerprint,
+        status=UploadIdempotencyStatus(record.status),
+        document_id=DocumentId(record.document_id) if record.document_id is not None else None,
+        document_version_id=(
+            DocumentVersionId(record.document_version_id)
+            if record.document_version_id is not None
+            else None
+        ),
+        response_status=record.response_status,
+        outcome=record.outcome,
+        error_code=record.error_code,
+        retryable=record.retryable,
+        created_at=record.created_at.astimezone(UTC),
+        updated_at=record.updated_at.astimezone(UTC),
+        expires_at=record.expires_at.astimezone(UTC),
     )

@@ -4,7 +4,9 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
+from enum import StrEnum
+from typing import BinaryIO, cast
 from uuid import UUID, uuid4
 
 from workflowforge_domain.audit import AuditEvent, AuditEventType, AuditOutcome, AuditRequestContext
@@ -29,11 +31,32 @@ from workflowforge_application.authorization import AuthorizationPolicy, TenantC
 from workflowforge_application.documents.errors import (
     DocumentNotFoundError,
     DuplicateDocumentContentError,
+    IdempotencyConflictError,
+    IdempotencyInProgressError,
+    ObjectStorageUnavailableError,
+    UploadValidationError,
 )
 from workflowforge_application.documents.ports import (
     DocumentListFilter,
     DocumentProjection,
     DocumentRepository,
+    ObjectStorage,
+    PromoteObjectRequest,
+    PutTempObjectRequest,
+    UploadIdempotencyRecord,
+    UploadIdempotencyRepository,
+    UploadIdempotencyStatus,
+)
+from workflowforge_application.documents.upload_validation import (
+    MAX_UPLOAD_BYTES,
+    AsyncUploadStream,
+    NormalizedUploadMetadata,
+    StreamedUpload,
+    normalize_upload_metadata,
+    request_fingerprint,
+    stream_upload,
+    validate_idempotency_key,
+    validate_streamed_content,
 )
 from workflowforge_application.identity.ports import IdGenerator, TransactionManager
 
@@ -77,6 +100,37 @@ class DocumentArtifactRegistrationCommand:
     content_hash: str | None = None
     metadata: Mapping[str, object] | None = None
     audit_context: AuditRequestContext | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class UploadDocumentCommand:
+    """Input for uploading one document."""
+
+    filename: str | None
+    declared_media_type: str | None
+    stream: AsyncUploadStream
+    idempotency_key: str
+    audit_context: AuditRequestContext | None = None
+
+
+class UploadDocumentOutcome(StrEnum):
+    """Document upload result outcome."""
+
+    CREATED = "created"
+    DUPLICATE = "duplicate"
+    IDEMPOTENT_REPLAY = "idempotent_replay"
+
+
+@dataclass(frozen=True, slots=True)
+class UploadDocumentResult:
+    """Application upload result DTO."""
+
+    document: Document
+    current_version: DocumentVersion
+    outcome: UploadDocumentOutcome
+    duplicate: bool
+    idempotent_replay: bool
+    response_status: int
 
 
 class DocumentService:
@@ -378,6 +432,578 @@ class DocumentService:
                 organization_id=tenant.organization_id,
                 request_context=request_context,
                 metadata={"target_type": "document", "target_id": target_id, **(metadata or {})},
+            )
+        )
+
+
+class UploadDocument:
+    """Orchestrate tenant-scoped document upload."""
+
+    def __init__(
+        self,
+        *,
+        documents: DocumentRepository,
+        idempotency: UploadIdempotencyRepository,
+        storage: ObjectStorage,
+        transaction: TransactionManager,
+        audit: AuditRecorder | None = None,
+        ids: IdGenerator | None = None,
+        max_bytes: int = MAX_UPLOAD_BYTES,
+        idempotency_ttl: timedelta = timedelta(hours=24),
+    ) -> None:
+        self._documents = documents
+        self._idempotency = idempotency
+        self._storage = storage
+        self._transaction = transaction
+        self._audit = audit
+        self._ids = ids
+        self._max_bytes = max_bytes
+        self._idempotency_ttl = idempotency_ttl
+        self._authorization = AuthorizationPolicy()
+
+    async def __call__(
+        self,
+        command: UploadDocumentCommand,
+        *,
+        tenant: TenantContext,
+        now: datetime | None = None,
+    ) -> UploadDocumentResult:
+        """Upload one document for a tenant."""
+
+        self._authorization.require(tenant, Permission.DOCUMENT_WRITE)
+        timestamp = _now(now)
+        key = validate_idempotency_key(command.idempotency_key)
+        existing_record = await self._idempotency.get(
+            organization_id=tenant.organization_id,
+            idempotency_key=key,
+        )
+        if existing_record is not None:
+            return await self._handle_existing_record(
+                command=command,
+                tenant=tenant,
+                record=existing_record,
+            )
+
+        await self._idempotency.reserve(
+            organization_id=tenant.organization_id,
+            idempotency_key=key,
+            now=timestamp,
+            expires_at=timestamp + self._idempotency_ttl,
+        )
+        await self._transaction.commit()
+        await self._record_upload_event(
+            AuditEventType.DOCUMENT_UPLOAD_STARTED,
+            tenant=tenant,
+            request_context=command.audit_context,
+            now=timestamp,
+            metadata={"idempotency_replay": False},
+        )
+        return await self._process_reserved_upload(command=command, tenant=tenant, key=key)
+
+    async def _process_reserved_upload(
+        self,
+        *,
+        command: UploadDocumentCommand,
+        tenant: TenantContext,
+        key: str,
+    ) -> UploadDocumentResult:
+        temp_key = StorageObjectKey.for_temporary_upload(
+            organization_id=tenant.organization_id,
+            upload_id=_new_uuid(self._ids),
+        )
+        metadata: NormalizedUploadMetadata | None = None
+        streamed: StreamedUpload | None = None
+        fingerprint: str | None = None
+        try:
+            metadata, streamed, fingerprint = await self._prepare_upload(command)
+            await self._idempotency.finalize_fingerprint(
+                organization_id=tenant.organization_id,
+                idempotency_key=key,
+                request_fingerprint=fingerprint,
+                now=_now(None),
+            )
+            await self._storage.put_temp_stream(
+                PutTempObjectRequest(
+                    key=temp_key,
+                    body=cast("BinaryIO", streamed.body),
+                    media_type=metadata.media_type,
+                )
+            )
+            await self._transaction.commit()
+        except UploadValidationError as exc:
+            if streamed is not None:
+                streamed.body.close()
+            await self._idempotency.fail(
+                organization_id=tenant.organization_id,
+                idempotency_key=key,
+                request_fingerprint=fingerprint,
+                error_code=exc.code,
+                response_status=422,
+                retryable=False,
+                now=_now(None),
+            )
+            await self._transaction.commit()
+            await self._record_failed_upload(command, tenant=tenant, error_code=exc.code)
+            raise
+        except Exception as exc:
+            if streamed is not None:
+                streamed.body.close()
+            await self._delete_temp_best_effort(temp_key)
+            await self._idempotency.fail(
+                organization_id=tenant.organization_id,
+                idempotency_key=key,
+                request_fingerprint=fingerprint,
+                error_code="object_storage_unavailable",
+                response_status=503,
+                retryable=True,
+                now=_now(None),
+            )
+            await self._transaction.commit()
+            await self._record_failed_upload(
+                command,
+                tenant=tenant,
+                error_code="object_storage_unavailable",
+            )
+            raise ObjectStorageUnavailableError("Object storage is unavailable.") from exc
+
+        if metadata is None or streamed is None or fingerprint is None:
+            raise RuntimeError("Upload preparation did not produce metadata.")
+
+        duplicate_result = await self._complete_duplicate_if_present(
+            command=command,
+            tenant=tenant,
+            idempotency_key=key,
+            fingerprint=fingerprint,
+            temp_key=temp_key,
+            content_hash=streamed.content_hash,
+            byte_size=streamed.byte_size,
+        )
+        if duplicate_result is not None:
+            streamed.body.close()
+            return duplicate_result
+
+        document, version = self._new_document_pair(
+            tenant=tenant,
+            metadata=metadata,
+            content_hash=streamed.content_hash,
+            byte_size=streamed.byte_size,
+            now=_now(None),
+        )
+        try:
+            document = await self._documents.add_document(document, version)
+            await self._transaction.commit()
+        except DuplicateDocumentContentError:
+            await self._transaction.rollback()
+            duplicate = await self._documents.find_document_by_tenant_content_hash(
+                organization_id=tenant.organization_id,
+                content_hash=streamed.content_hash,
+            )
+            if duplicate is None:
+                raise
+            result = await self._complete_duplicate(
+                command=command,
+                tenant=tenant,
+                idempotency_key=key,
+                fingerprint=fingerprint,
+                temp_key=temp_key,
+                duplicate=duplicate,
+                byte_size=streamed.byte_size,
+            )
+            streamed.body.close()
+            return result
+
+        try:
+            stored_document, stored_version = await self._promote_new_document(
+                document=document,
+                version=version,
+                tenant=tenant,
+                temp_key=temp_key,
+                media_type=metadata.media_type,
+                byte_size=streamed.byte_size,
+                content_hash=streamed.content_hash,
+            )
+            await self._idempotency.complete(
+                organization_id=tenant.organization_id,
+                idempotency_key=key,
+                request_fingerprint=fingerprint,
+                document_id=stored_document.id,
+                document_version_id=stored_version.id,
+                response_status=201,
+                outcome=UploadDocumentOutcome.CREATED.value,
+                now=_now(None),
+            )
+            await self._transaction.commit()
+            await self._record_upload_event(
+                AuditEventType.DOCUMENT_STORAGE_SUCCEEDED,
+                tenant=tenant,
+                request_context=command.audit_context,
+                now=_now(None),
+                metadata={"document_id": stored_document.id.value, "byte_size": streamed.byte_size},
+            )
+            streamed.body.close()
+            return UploadDocumentResult(
+                document=stored_document,
+                current_version=stored_version,
+                outcome=UploadDocumentOutcome.CREATED,
+                duplicate=False,
+                idempotent_replay=False,
+                response_status=201,
+            )
+        except Exception as exc:
+            streamed.body.close()
+            await self._mark_upload_storage_failed(
+                command=command,
+                tenant=tenant,
+                idempotency_key=key,
+                fingerprint=fingerprint,
+                document=document,
+                version=version,
+            )
+            raise ObjectStorageUnavailableError("Object storage is unavailable.") from exc
+
+    async def _handle_existing_record(
+        self,
+        *,
+        command: UploadDocumentCommand,
+        tenant: TenantContext,
+        record: UploadIdempotencyRecord,
+    ) -> UploadDocumentResult:
+        if record.status is UploadIdempotencyStatus.IN_PROGRESS:
+            raise IdempotencyInProgressError("Upload is already in progress.")
+        if record.status is UploadIdempotencyStatus.COMPLETED:
+            await self._assert_replay_fingerprint(command=command, record=record)
+            return await self._replay_completed(record, tenant=tenant)
+        if record.status is UploadIdempotencyStatus.FAILED and not record.retryable:
+            if record.request_fingerprint is not None:
+                await self._assert_replay_fingerprint(command=command, record=record)
+            raise UploadValidationError(
+                record.error_code or "validation_error",
+                "The previous upload attempt failed validation.",
+            )
+        if record.request_fingerprint is not None:
+            await self._assert_replay_fingerprint(command=command, record=record)
+        timestamp = _now(None)
+        await self._idempotency.mark_in_progress(
+            organization_id=tenant.organization_id,
+            idempotency_key=record.idempotency_key,
+            now=timestamp,
+            expires_at=timestamp + self._idempotency_ttl,
+        )
+        await self._transaction.commit()
+        await self._record_upload_event(
+            AuditEventType.DOCUMENT_UPLOAD_STARTED,
+            tenant=tenant,
+            request_context=command.audit_context,
+            now=timestamp,
+            metadata={"idempotency_replay": True},
+        )
+        return await self._process_reserved_upload(
+            command=command,
+            tenant=tenant,
+            key=record.idempotency_key,
+        )
+
+    async def _prepare_upload(
+        self,
+        command: UploadDocumentCommand,
+    ) -> tuple[NormalizedUploadMetadata, StreamedUpload, str]:
+        metadata = normalize_upload_metadata(
+            filename=command.filename,
+            declared_media_type=command.declared_media_type,
+        )
+        streamed = await stream_upload(command.stream, max_bytes=self._max_bytes)
+        fingerprint = request_fingerprint(
+            content_hash=streamed.content_hash,
+            filename=metadata.filename,
+            media_type=metadata.media_type,
+            byte_size=streamed.byte_size,
+        )
+        validate_streamed_content(metadata=metadata, upload=streamed)
+        streamed.body.seek(0)
+        return metadata, streamed, fingerprint
+
+    async def _assert_replay_fingerprint(
+        self,
+        *,
+        command: UploadDocumentCommand,
+        record: UploadIdempotencyRecord,
+    ) -> None:
+        try:
+            _, streamed, fingerprint = await self._prepare_upload(command)
+        except UploadValidationError as exc:
+            raise IdempotencyConflictError(
+                "Idempotency-Key was already used with a different upload."
+            ) from exc
+        finally:
+            if "streamed" in locals():
+                streamed.body.close()
+        if record.request_fingerprint != fingerprint:
+            raise IdempotencyConflictError(
+                "Idempotency-Key was already used with a different upload."
+            )
+
+    async def _replay_completed(
+        self,
+        record: UploadIdempotencyRecord,
+        *,
+        tenant: TenantContext,
+    ) -> UploadDocumentResult:
+        if record.document_id is None or record.document_version_id is None:
+            raise IdempotencyConflictError("Stored idempotency result is incomplete.")
+        document = await self._documents.get_document(
+            organization_id=tenant.organization_id,
+            document_id=record.document_id,
+        )
+        if document is None:
+            raise IdempotencyConflictError("Stored idempotency result is unavailable.")
+        version = await self._documents.get_version(
+            organization_id=tenant.organization_id,
+            document_id=document.id,
+            version_id=record.document_version_id,
+        )
+        if version is None:
+            raise IdempotencyConflictError("Stored idempotency result is unavailable.")
+        return UploadDocumentResult(
+            document=document,
+            current_version=version,
+            outcome=UploadDocumentOutcome.IDEMPOTENT_REPLAY,
+            duplicate=record.outcome == UploadDocumentOutcome.DUPLICATE.value,
+            idempotent_replay=True,
+            response_status=record.response_status or 200,
+        )
+
+    async def _complete_duplicate_if_present(
+        self,
+        *,
+        command: UploadDocumentCommand,
+        tenant: TenantContext,
+        idempotency_key: str,
+        fingerprint: str,
+        temp_key: StorageObjectKey,
+        content_hash: ContentHash,
+        byte_size: int,
+    ) -> UploadDocumentResult | None:
+        existing = await self._documents.find_document_by_tenant_content_hash(
+            organization_id=tenant.organization_id,
+            content_hash=content_hash,
+        )
+        if existing is None:
+            return None
+        return await self._complete_duplicate(
+            command=command,
+            tenant=tenant,
+            idempotency_key=idempotency_key,
+            fingerprint=fingerprint,
+            temp_key=temp_key,
+            duplicate=existing,
+            byte_size=byte_size,
+        )
+
+    async def _complete_duplicate(
+        self,
+        *,
+        command: UploadDocumentCommand,
+        tenant: TenantContext,
+        idempotency_key: str,
+        fingerprint: str,
+        temp_key: StorageObjectKey,
+        duplicate: Document,
+        byte_size: int,
+    ) -> UploadDocumentResult:
+        await self._delete_temp_best_effort(temp_key)
+        version = await self._require_current_version(duplicate)
+        await self._idempotency.complete(
+            organization_id=tenant.organization_id,
+            idempotency_key=idempotency_key,
+            request_fingerprint=fingerprint,
+            document_id=duplicate.id,
+            document_version_id=version.id,
+            response_status=200,
+            outcome=UploadDocumentOutcome.DUPLICATE.value,
+            now=_now(None),
+        )
+        await self._transaction.commit()
+        await self._record_upload_event(
+            AuditEventType.DOCUMENT_DUPLICATE_DETECTED,
+            tenant=tenant,
+            request_context=command.audit_context,
+            now=_now(None),
+            metadata={"document_id": duplicate.id.value, "byte_size": byte_size},
+        )
+        return UploadDocumentResult(
+            document=duplicate,
+            current_version=version,
+            outcome=UploadDocumentOutcome.DUPLICATE,
+            duplicate=True,
+            idempotent_replay=False,
+            response_status=200,
+        )
+
+    async def _promote_new_document(
+        self,
+        *,
+        document: Document,
+        version: DocumentVersion,
+        tenant: TenantContext,
+        temp_key: StorageObjectKey,
+        media_type: str,
+        byte_size: int,
+        content_hash: ContentHash,
+    ) -> tuple[Document, DocumentVersion]:
+        final_key = StorageObjectKey.for_document_content(
+            organization_id=tenant.organization_id,
+            content_hash=content_hash,
+        )
+        existing_object = await self._storage.head_object(final_key)
+        if existing_object is None:
+            await self._storage.promote_temp_object(
+                PromoteObjectRequest(
+                    source_key=temp_key,
+                    destination_key=final_key,
+                    media_type=media_type,
+                )
+            )
+        elif existing_object.byte_size != byte_size:
+            raise ObjectStorageUnavailableError("Final object metadata is inconsistent.")
+        else:
+            await self._delete_temp_best_effort(temp_key)
+        stored_version = await self._documents.mark_version_stored(
+            organization_id=tenant.organization_id,
+            document_id=document.id,
+            version_id=version.id,
+        )
+        stored_document = document.mark_stored(actor_user_id=tenant.user_id, now=_now(None))
+        await self._documents.archive_document(stored_document)
+        return stored_document, stored_version
+
+    async def _mark_upload_storage_failed(
+        self,
+        *,
+        command: UploadDocumentCommand,
+        tenant: TenantContext,
+        idempotency_key: str,
+        fingerprint: str,
+        document: Document,
+        version: DocumentVersion,
+    ) -> None:
+        await self._documents.mark_version_failed(
+            organization_id=tenant.organization_id,
+            document_id=document.id,
+            version_id=version.id,
+        )
+        failed_document = document.mark_failed(actor_user_id=tenant.user_id, now=_now(None))
+        await self._documents.archive_document(failed_document)
+        await self._idempotency.fail(
+            organization_id=tenant.organization_id,
+            idempotency_key=idempotency_key,
+            request_fingerprint=fingerprint,
+            error_code="object_storage_unavailable",
+            response_status=503,
+            retryable=True,
+            now=_now(None),
+        )
+        await self._transaction.commit()
+        await self._record_failed_upload(
+            command,
+            tenant=tenant,
+            error_code="object_storage_unavailable",
+            document_id=document.id.value,
+        )
+
+    async def _require_current_version(self, document: Document) -> DocumentVersion:
+        version = await self._documents.get_version(
+            organization_id=document.organization_id,
+            document_id=document.id,
+            version_id=document.current_version_id,
+        )
+        if version is None:
+            msg = "Document current version was not found."
+            raise DocumentNotFoundError(msg)
+        return version
+
+    def _new_document_pair(
+        self,
+        *,
+        tenant: TenantContext,
+        metadata: NormalizedUploadMetadata,
+        content_hash: ContentHash,
+        byte_size: int,
+        now: datetime,
+    ) -> tuple[Document, DocumentVersion]:
+        document_id = DocumentId(_new_uuid(self._ids))
+        version = DocumentVersion.create(
+            id=DocumentVersionId(_new_uuid(self._ids)),
+            organization_id=tenant.organization_id,
+            document_id=document_id,
+            version_number=1,
+            original_filename=metadata.filename,
+            media_type=metadata.media_type,
+            byte_size=byte_size,
+            content_hash=content_hash,
+            storage_state=DocumentStorageState.PENDING,
+            created_at=now,
+            created_by_user_id=tenant.user_id,
+        )
+        document = Document.register(
+            id=document_id,
+            organization_id=tenant.organization_id,
+            display_filename=metadata.filename,
+            source_type=DocumentSourceType.UPLOAD,
+            source_reference=None,
+            current_version=version,
+            created_by_user_id=tenant.user_id,
+            now=now,
+        )
+        return document, version
+
+    async def _delete_temp_best_effort(self, key: StorageObjectKey) -> None:
+        try:
+            await self._storage.delete_object(key)
+        except Exception:
+            return
+
+    async def _record_failed_upload(
+        self,
+        command: UploadDocumentCommand,
+        *,
+        tenant: TenantContext,
+        error_code: str,
+        document_id: UUID | None = None,
+    ) -> None:
+        metadata: dict[str, object] = {"error_code": error_code}
+        if document_id is not None:
+            metadata["document_id"] = document_id
+        await self._record_upload_event(
+            AuditEventType.DOCUMENT_UPLOAD_FAILED,
+            tenant=tenant,
+            request_context=command.audit_context,
+            now=_now(None),
+            outcome=AuditOutcome.FAILURE,
+            metadata=metadata,
+        )
+
+    async def _record_upload_event(
+        self,
+        event_type: AuditEventType,
+        *,
+        tenant: TenantContext,
+        request_context: AuditRequestContext | None,
+        now: datetime,
+        outcome: AuditOutcome = AuditOutcome.SUCCESS,
+        metadata: Mapping[str, object] | None = None,
+    ) -> None:
+        if self._audit is None:
+            return
+        await self._audit.record(
+            AuditEvent.create(
+                id=_new_uuid(self._ids),
+                event_type=event_type,
+                outcome=outcome,
+                occurred_at=now,
+                actor_user_id=tenant.user_id,
+                organization_id=tenant.organization_id,
+                request_context=request_context,
+                metadata=metadata or {},
             )
         )
 
